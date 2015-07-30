@@ -166,7 +166,7 @@ instance TypesMatchPred (PrimFun (CDouble -> CDouble)) tx PFUnaryFloatFloat
 -- Type level flags for classifying PrimFun s
 data PFUnaryFloatFloat  -- Floating -> Floating
 data PFBinaryFloatFloat -- (Floating, Floating ) -> Floating
-data PFOtherFloat       -- Other -> Floating
+data PFUnaryOtherFloat  -- Other -> Floating
 data PFUseless          -- Other -> Other
 
 -- In order of definition in Accelerate:
@@ -241,16 +241,15 @@ instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' P
   diffprimfun' _ (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
     (a1, a2) = untup2 ta1a2
 
--- All functions that output integers must have a differential of 0 or be undifferentiable.
+-- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
 
---instance (IsFloating ta, Elt ta,
---          IsFloating tx, Elt tx,
---          IsIntegral tb, Elt tb
---          ) => DifferentiatePrimFun' PFUnaryOtherFloat (PrimFun (a -> b)) tx where
---                 diffprimfun' = 
+instance (IsFloating ta, Elt ta,
+          IsFloating tx, Elt tx,
+          IsIntegral tb, Elt tb
+          ) => DifferentiatePrimFun' PFUnaryOtherFloat (PrimFun (ta -> tb)) tx where
+                 diffprimfun' _ (PrimFromIntegral t1 t2) _ _ = constant 0
 
---instance (IsFloating a, Elt a, IsIntegral tx, Elt tx) => DifferentiatePrimFun' PFBinaryFloatFloat (PrimFun ((a,a) -> a)) tx where
-
+-- Default:
 
 instance (Elt a) => DifferentiatePrimFun' PFUseless pf a where
   diffprimfun' _ fun a dx = undefined
