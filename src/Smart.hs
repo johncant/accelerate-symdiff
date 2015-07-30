@@ -15,6 +15,7 @@
 
 module Smart (diff) where
 
+import Prelude hiding ((>*), (<*))
 import Data.Array.Accelerate.Type (IsFloating, NumType(..), numType)
 import Data.Array.Accelerate.Array.Sugar (Elt)
 import Data.Array.Accelerate.Smart
@@ -90,7 +91,15 @@ chainUnary :: ( IsNum tf, Elt tf, IsFloating tf
            -> Exp tx
            -> Exp tf
 
-chainUnary dexp a dx = mkMul dexp (diff a dx) where
+chainUnary dexp a dx = dexp * (diff a dx)
+
+chainBinary :: ( IsNum tf, Elt tf, IsFloating tf
+               , IsNum tx, Elt tx, IsFloating tx)
+            => Exp tf -> Exp tf
+            -> Exp tf -> Exp tf
+            -> Exp tx
+            -> Exp tf
+chainBinary dwrta1 dwrta2 a1 a2 dx = dwrta1 * (diff a1 dx) + dwrta2 * (diff a2 dx)
 
 -- Problem: PrimFun (a -> b) appears in the AST and can be any type in theory
 -- Although in practice, a and b will only be types that result from the data
@@ -160,9 +169,11 @@ data PFBinaryFloatFloat -- (Floating, Floating ) -> Floating
 data PFOtherFloat       -- Other -> Floating
 data PFUseless          -- Other -> Other
 
--- impl
+-- In order of definition in Accelerate:
+-- Some credit goes to Wolfram Alpha
 instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' PFUnaryFloatFloat (PrimFun (a -> a)) tx where
 
+  -- basic stuff
   diffprimfun' _ (PrimNeg ty) a dx = mkNeg $ diff a dx
 
   diffprimfun' _ (PrimAbs ty) a dx = chainUnary (signum a) a dx
@@ -171,13 +182,74 @@ instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' P
 
   diffprimfun' _ (PrimRecip ty) a dx = chainUnary (a**(-2)) a dx
 
+  -- trig
   diffprimfun' _ (PrimSin ty) a dx = chainUnary (cos a) a dx
 
   diffprimfun' _ (PrimCos ty) a dx = chainUnary (- sin a) a dx
 
   diffprimfun' _ (PrimTan ty) a dx = chainUnary ((cos a)**(-2)) a dx
 
-  diffprimfun' _ (PrimAsin ty) a dx = chainUnary (sqrt (1 - a**2)) a dx
+  -- inverse trig
+  diffprimfun' _ (PrimAsin ty) a dx = chainUnary (1/(sqrt (1 - a**2))) a dx
+
+  diffprimfun' _ (PrimAcos ty) a dx = chainUnary (-1/(sqrt (1 - a**2))) a dx
+
+  diffprimfun' _ (PrimAtan ty) a dx = chainUnary (1/(1+a**2)) a dx
+
+  -- inverse hyperbolic
+  diffprimfun' _ (PrimAsinh ty) a dx = chainUnary (1/(sqrt (1 + a**2))) a dx
+
+  diffprimfun' _ (PrimAcosh ty) a dx = chainUnary (1/(sqrt (a**2 - 1))) a dx
+
+  diffprimfun' _ (PrimAtanh ty) a dx = chainUnary (1/(1 - a**2)) a dx
+
+  -- other important funcs
+  diffprimfun' _ (PrimExpFloating ty) a dx = chainUnary a a dx
+
+  diffprimfun' _ (PrimSqrt ty) a dx = chainUnary (0.5 * a** (-0.5)) a dx
+
+  diffprimfun' _ (PrimLog ty) a dx = chainUnary (recip a) a dx
+
+instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' PFBinaryFloatFloat (PrimFun ((a,a) -> a)) tx where
+
+  -- DMAS
+  diffprimfun' _ (PrimAdd ty) ta1a2 dx = chainBinary 1 1 a1 a2 dx where
+    (a1, a2) = untup2 ta1a2
+
+  diffprimfun' _ (PrimSub ty) ta1a2 dx = chainBinary 1 (-1) a1 a2 dx where
+    (a1, a2) = untup2 ta1a2
+
+  diffprimfun' _ (PrimMul ty) ta1a2 dx = chainBinary a2 a1 a1 a2 dx where
+    (a1, a2) = untup2 ta1a2
+
+  diffprimfun' _ (PrimFDiv ty) ta1a2 dx = chainBinary (1/a2) (-a1/a2**2) a1 a2 dx where
+    (a1, a2) = untup2 ta1a2
+
+  -- O and inverse O
+  diffprimfun' _ (PrimFPow ty) ta1a2 dx = chainBinary (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
+    (a1, a2) = untup2 ta1a2
+
+  diffprimfun' _ (PrimLogBase ty) ta1a2 dx = chainBinary (-(log a2)/(a1*(log a1)**2)) (recip (log a1 * log a2)) a1 a2 dx where
+    (a1, a2) = untup2 ta1a2
+
+  diffprimfun' _ (PrimAtan2 ty) ta1a2 dx = (chainBinary (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
+    (a1, a2) = untup2 ta1a2
+
+  diffprimfun' _ (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+    (a1, a2) = untup2 ta1a2
+
+  diffprimfun' _ (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+    (a1, a2) = untup2 ta1a2
+
+-- All functions that output integers must have a differential of 0 or be undifferentiable.
+
+--instance (IsFloating ta, Elt ta,
+--          IsFloating tx, Elt tx,
+--          IsIntegral tb, Elt tb
+--          ) => DifferentiatePrimFun' PFUnaryOtherFloat (PrimFun (a -> b)) tx where
+--                 diffprimfun' = 
+
+--instance (IsFloating a, Elt a, IsIntegral tx, Elt tx) => DifferentiatePrimFun' PFBinaryFloatFloat (PrimFun ((a,a) -> a)) tx where
 
 
 instance (Elt a) => DifferentiatePrimFun' PFUseless pf a where
