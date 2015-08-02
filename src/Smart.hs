@@ -8,12 +8,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE EmptyDataDecls #-}
 
-module Smart (diff) where
+module Smart where
 
 import Prelude hiding ((>*), (<*))
 import Data.Array.Accelerate.Type (IsFloating, NumType(..), numType)
@@ -24,16 +23,17 @@ import Data.Array.Accelerate.AST (PrimFun(..))
 import Data.Array.Accelerate.Tuple (Tuple(..))
 import Foreign.C.Types (CFloat, CDouble)
 import Data.Array.Accelerate
+import AST
 
-diff :: (Elt t, IsFloating t, Elt tx, IsFloating tx) => Exp t -> Exp tx -> Exp t
-diff expf@(Exp f) expx@(Exp x) = case f of
-                                  x -> (constant 1)
-                                  _ -> diff' f expx
+diff :: (Eq t, Elt t, IsFloating t, Eq tx, Elt tx, IsFloating tx) => Exp t -> Exp tx -> Exp t
+diff expf@(Exp f) expx@(Exp x) = case f ===== x of
+                                  True -> (constant 1)
+                                  False -> diff' f expx
 
 -- Now we are free to ignore f == x .
 
-diff' :: ( Elt tf, IsFloating tf, Num tf
-         , Elt tx, IsFloating tx, Num tx)
+diff' :: ( Elt tf, IsFloating tf, Num tf, Eq tf
+         , Elt tx, IsFloating tx, Num tx, Eq tx)
             => PreExp Acc Exp tf
             -> Exp tx
             -> Exp tf
@@ -68,7 +68,7 @@ diff' (While _ _ _) _ = constant 0 -- TODO
 
 diff' (PrimConst _) _ = constant 0
 
-diff' (PrimApp pf x) _ = constant 0 -- TODO - AST
+diff' (PrimApp pf a) dx = diffprimfun pf a dx
 
 diff' (Index _ _) _ = constant 0
 
@@ -84,8 +84,8 @@ diff' (Foreign _ _ _) _ = constant 0 -- TODO
 
 
 
-chainUnary :: ( IsNum tf, Elt tf, IsFloating tf
-              , IsNum tx, Elt tx, IsFloating tx)
+chainUnary :: ( IsNum tf, Elt tf, IsFloating tf, Eq tf
+              , IsNum tx, Elt tx, IsFloating tx, Eq tx)
            => Exp tf
            -> Exp tf
            -> Exp tx
@@ -93,8 +93,8 @@ chainUnary :: ( IsNum tf, Elt tf, IsFloating tf
 
 chainUnary dexp a dx = dexp * (diff a dx)
 
-chainBinary :: ( IsNum tf, Elt tf, IsFloating tf
-               , IsNum tx, Elt tx, IsFloating tx)
+chainBinary :: ( IsNum tf, Elt tf, IsFloating tf, Eq tf
+               , IsNum tx, Elt tx, IsFloating tx, Eq tx)
             => Exp tf -> Exp tf
             -> Exp tf -> Exp tf
             -> Exp tx
@@ -119,10 +119,10 @@ type instance ResultT (PrimFun (a -> b)) = b
 
 -- Outer class of all PrimFun s
 -- TODO - if this does not work, use type families to specify types
-class (Elt tx) => DifferentiatePrimFun pf tx where
+class DifferentiatePrimFun pf where
   diffprimfun :: ( Elt (ArgT pf)
                  , Elt (ResultT pf)
-                 , Elt tx
+                 , Elt tx, Eq tx, IsFloating tx
                  )
               => pf
               -> Exp (ArgT pf)
@@ -130,10 +130,10 @@ class (Elt tx) => DifferentiatePrimFun pf tx where
               -> Exp (ResultT pf)
 
 -- Inner class with flags
-class (Elt tx) => DifferentiatePrimFun' flag pf tx where
+class DifferentiatePrimFun' flag pf where
   diffprimfun' :: ( Elt (ArgT pf)
                   , Elt (ResultT pf)
-                  , Elt tx
+                  , Elt tx, Eq tx, IsFloating tx
 --                  , IsFloating (ArgT pf)
 --                  , IsFloating (ResultT pf)
 --                  , IsFloating tx
@@ -144,24 +144,27 @@ class (Elt tx) => DifferentiatePrimFun' flag pf tx where
                -> Exp tx
                -> Exp (ResultT pf)
 
-instance (DifferentiatePrimFun' flag pf tx, TypesMatchPred pf tx flag) => DifferentiatePrimFun pf tx where
+instance (DifferentiatePrimFun' flag pf, TypesMatchPred pf flag) => DifferentiatePrimFun pf where
   diffprimfun = diffprimfun' (undefined::flag)
 
 -- ...
-class TypesMatchPred pf tx flag | pf tx -> flag where {}
+class TypesMatchPred pf flag | pf -> flag where {}
 
 -- Used if no matches
 
-instance TypeCast flag PFUseless => TypesMatchPred pf tx flag
+--instance TypeCast flag PFUseless => TypesMatchPred (PrimFun sig) flag
+instance (flag ~ PFUseless) => TypesMatchPred pf flag
+--{-# OVERLAPPABLE #-}
 
 -- Useful instances
 -- Unfortunately this won't work
 --instance (IsNum t, Elt t, IsFloating t) => TypesMatchPred (PrimFun (t -> t)) PFUnaryFloatFloat
 -- We have to use this:
-instance TypesMatchPred (PrimFun (Float -> Float)) tx PFUnaryFloatFloat
-instance TypesMatchPred (PrimFun (CFloat -> CFloat)) tx PFUnaryFloatFloat
-instance TypesMatchPred (PrimFun (Double -> Double)) tx PFUnaryFloatFloat
-instance TypesMatchPred (PrimFun (CDouble -> CDouble)) tx PFUnaryFloatFloat
+instance TypesMatchPred (PrimFun (Float -> Float)) PFUnaryFloatFloat
+instance TypesMatchPred (PrimFun (CFloat -> CFloat)) PFUnaryFloatFloat
+--instance TypesMatchPred (PrimFun (Double -> Double)) PFUnaryFloatFloat
+instance TypesMatchPred (PrimFun (CDouble -> CDouble)) PFUnaryFloatFloat
+instance TypesMatchPred (PrimFun (Double -> Double)) PFUnaryFloatFloat
 
 -- Type level flags for classifying PrimFun s
 data PFUnaryFloatFloat  -- Floating -> Floating
@@ -169,9 +172,13 @@ data PFBinaryFloatFloat -- (Floating, Floating ) -> Floating
 data PFUnaryOtherFloat  -- Other -> Floating
 data PFUseless          -- Other -> Other
 
+-- Default:
+instance (Num (ResultT pf)) => DifferentiatePrimFun' PFUseless pf where
+  diffprimfun' _ (fun::pf) a dx = constant (69::ResultT pf)
+
 -- In order of definition in Accelerate:
 -- Some credit goes to Wolfram Alpha
-instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' PFUnaryFloatFloat (PrimFun (a -> a)) tx where
+instance (IsFloating a, Elt a, Eq a) => DifferentiatePrimFun' PFUnaryFloatFloat (PrimFun (a -> a)) where
 
   -- basic stuff
   diffprimfun' _ (PrimNeg ty) a dx = mkNeg $ diff a dx
@@ -210,7 +217,7 @@ instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' P
 
   diffprimfun' _ (PrimLog ty) a dx = chainUnary (recip a) a dx
 
-instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' PFBinaryFloatFloat (PrimFun ((a,a) -> a)) tx where
+instance (IsFloating a, Elt a, Eq a) => DifferentiatePrimFun' PFBinaryFloatFloat (PrimFun ((a,a) -> a)) where
 
   -- DMAS
   diffprimfun' _ (PrimAdd ty) ta1a2 dx = chainBinary 1 1 a1 a2 dx where
@@ -243,16 +250,11 @@ instance (IsFloating a, Elt a, IsFloating tx, Elt tx) => DifferentiatePrimFun' P
 
 -- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
 
-instance (IsFloating ta, Elt ta,
-          IsFloating tx, Elt tx,
-          IsIntegral tb, Elt tb
-          ) => DifferentiatePrimFun' PFUnaryOtherFloat (PrimFun (ta -> tb)) tx where
+instance (IsFloating tb, Elt tb, Eq tb,
+          IsIntegral ta, Elt ta, Eq ta
+          ) => DifferentiatePrimFun' PFUnaryOtherFloat (PrimFun (ta -> tb)) where
                  diffprimfun' _ (PrimFromIntegral t1 t2) _ _ = constant 0
 
--- Default:
-
-instance (Elt a) => DifferentiatePrimFun' PFUseless pf a where
-  diffprimfun' _ fun a dx = undefined
 
 class TypeCast   a b   | a -> b, b->a   where typeCast   :: a -> b
 class TypeCast'  t a b | t a -> b, t b -> a where typeCast'  :: t->a->b
