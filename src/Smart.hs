@@ -144,27 +144,28 @@ class DifferentiatePrimFun' flag pf where
                -> Exp tx
                -> Exp (ResultT pf)
 
-instance (DifferentiatePrimFun' flag pf, TypesMatchPred pf flag) => DifferentiatePrimFun pf where
+type family TypeMatchResult pf where
+  TypeMatchResult (PrimFun (Float -> Float)) = PFUnaryFloatFloat
+  TypeMatchResult (PrimFun (CFloat -> CFloat)) = PFUnaryFloatFloat
+  TypeMatchResult (PrimFun (Double -> Double)) = PFUnaryFloatFloat
+  TypeMatchResult (PrimFun (CDouble -> CDouble)) = PFUnaryFloatFloat
+
+  TypeMatchResult (PrimFun ((Float, Float) -> Float)) = PFBinaryFloatFloat
+  TypeMatchResult (PrimFun ((CFloat, CFloat) -> CFloat)) = PFBinaryFloatFloat
+  TypeMatchResult (PrimFun ((Double, Double) -> Double)) = PFBinaryFloatFloat
+  TypeMatchResult (PrimFun ((CDouble, CDouble) -> CDouble)) = PFBinaryFloatFloat
+
+  TypeMatchResult (PrimFun (a -> Float)) = PFUnaryOtherFloat
+  TypeMatchResult (PrimFun (a -> CFloat)) = PFUnaryOtherFloat
+  TypeMatchResult (PrimFun (a -> Double)) = PFUnaryOtherFloat
+  TypeMatchResult (PrimFun (a -> CDouble)) = PFUnaryOtherFloat
+
+  TypeMatchResult (PrimFun (a -> a)) = PFUseless
+
+instance (DifferentiatePrimFun' flag pf, TypeMatchResult pf ~ flag) => DifferentiatePrimFun pf where
   diffprimfun = diffprimfun' (undefined::flag)
 
 -- ...
-class TypesMatchPred pf flag | pf -> flag where {}
-
--- Used if no matches
-
---instance TypeCast flag PFUseless => TypesMatchPred (PrimFun sig) flag
-instance (flag ~ PFUseless) => TypesMatchPred pf flag
---{-# OVERLAPPABLE #-}
-
--- Useful instances
--- Unfortunately this won't work
---instance (IsNum t, Elt t, IsFloating t) => TypesMatchPred (PrimFun (t -> t)) PFUnaryFloatFloat
--- We have to use this:
-instance TypesMatchPred (PrimFun (Float -> Float)) PFUnaryFloatFloat
-instance TypesMatchPred (PrimFun (CFloat -> CFloat)) PFUnaryFloatFloat
---instance TypesMatchPred (PrimFun (Double -> Double)) PFUnaryFloatFloat
-instance TypesMatchPred (PrimFun (CDouble -> CDouble)) PFUnaryFloatFloat
-instance TypesMatchPred (PrimFun (Double -> Double)) PFUnaryFloatFloat
 
 -- Type level flags for classifying PrimFun s
 data PFUnaryFloatFloat  -- Floating -> Floating
@@ -172,13 +173,10 @@ data PFBinaryFloatFloat -- (Floating, Floating ) -> Floating
 data PFUnaryOtherFloat  -- Other -> Floating
 data PFUseless          -- Other -> Other
 
--- Default:
-instance (Num (ResultT pf)) => DifferentiatePrimFun' PFUseless pf where
-  diffprimfun' _ (fun::pf) a dx = constant (69::ResultT pf)
 
 -- In order of definition in Accelerate:
 -- Some credit goes to Wolfram Alpha
-instance (IsFloating a, Elt a, Eq a) => DifferentiatePrimFun' PFUnaryFloatFloat (PrimFun (a -> a)) where
+instance (IsFloating a, Elt a, Eq a, PFUnaryFloatFloat ~ flag) => DifferentiatePrimFun' flag (PrimFun (a -> a)) where
 
   -- basic stuff
   diffprimfun' _ (PrimNeg ty) a dx = mkNeg $ diff a dx
@@ -255,11 +253,6 @@ instance (IsFloating tb, Elt tb, Eq tb,
           ) => DifferentiatePrimFun' PFUnaryOtherFloat (PrimFun (ta -> tb)) where
                  diffprimfun' _ (PrimFromIntegral t1 t2) _ _ = constant 0
 
-
-class TypeCast   a b   | a -> b, b->a   where typeCast   :: a -> b
-class TypeCast'  t a b | t a -> b, t b -> a where typeCast'  :: t->a->b
-class TypeCast'' t a b | t a -> b, t b -> a where typeCast'' :: t->a->b
-instance TypeCast'  () a b => TypeCast a b where typeCast x = typeCast' () x
-instance TypeCast'' t a b => TypeCast' t a b where typeCast' = typeCast''
-instance TypeCast'' () a a where typeCast'' _ x  = x
-
+-- Default:
+instance (Num (ResultT pf), PFUseless ~ flag) => DifferentiatePrimFun' flag pf where
+  diffprimfun' _ (fun::pf) a dx = constant (69::ResultT pf)
