@@ -3,7 +3,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE IncoherentInstances #-}
+{-# LANGUAGE IncoherentInstances #-} -- TODO
 {-# LANGUAGE GADTs #-}
 
 module AST where
@@ -52,7 +52,7 @@ instance DslEquiv (TupleIdx t e) where
 instance (Eq tf) => DslEquiv (PreExp Acc Exp tf) where
   (Tag level1) ==== (Tag level2) = level1 == level2
 
-  (Const cf1) ==== (Const cf2) = cf2 == cf2
+  (Const cf1) ==== (Const cf2) = cf1 == cf2
 
 --  (Tuple t1) ==== (Tuple t2) = t1 ==== t2
 --

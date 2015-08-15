@@ -1,16 +1,10 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE EmptyDataDecls #-}
 
 module Smart where
 
@@ -27,65 +21,69 @@ import AST
 
 diff :: (Eq t, Elt t, IsFloating t, Eq tx, Elt tx, IsFloating tx) => Exp t -> Exp tx -> Exp t
 diff expf@(Exp f) expx@(Exp x) = case f ===== x of
-                                  True -> (constant 1)
+                                  True -> (constant 1.0)
                                   False -> diff' f expx
 
 -- Now we are free to ignore f == x .
 
-diff' :: ( Elt tf, IsFloating tf, Num tf, Eq tf
-         , Elt tx, IsFloating tx, Num tx, Eq tx)
+diff' :: ( Elt tf, IsFloating tf, Eq tf
+         , Elt tx, IsFloating tx, Eq tx)
             => PreExp Acc Exp tf
             -> Exp tx
             -> Exp tf
 
 diff' tag@(Tag level) _ = Exp $ tag
 
-diff' (Const cf) _ = constant 0
+diff' (Const cf) _ = constant 10
 
-diff' (Tuple t) _ = constant 0 -- TODO
+diff' (Tuple t) _ = constant 11 -- tup d0 d1 where
 
-diff' (Prj _ _) _ = constant 0 -- TODO
+diff' (Prj _ _) _ = constant 12 -- TODO
 
-diff' (IndexNil) _ = constant 0
+diff' (IndexNil) _ = constant 13
 
-diff' (IndexCons _ _) _ = constant 0
+diff' (IndexCons _ _) _ = constant 14
 
-diff' (IndexHead _) _ = constant 0
+diff' (IndexHead _) _ = constant 15
 
-diff' (IndexTail _) _ = constant 0
+diff' (IndexTail _) _ = constant 16
 
-diff' (IndexAny) _ = constant 0
+diff' (IndexAny) _ = constant 17
 
-diff' (ToIndex _ _) _ = constant 0
+diff' (ToIndex _ _) _ = constant 18
 
-diff' (FromIndex _ _) _ = constant 0
+diff' (FromIndex _ _) _ = constant 19
 
 diff' (Cond c l r) dx = Exp $ Cond c dl dr where
   dl = diff l dx
   dr = diff r dx
 
-diff' (While _ _ _) _ = constant 0 -- TODO
+diff' (While _ _ _) _ = constant 20 -- TODO
 
-diff' (PrimConst _) _ = constant 0
+diff' (PrimConst _) _ = constant 21
 
-diff' (PrimApp pf a) dx = diffprimfun pf a dx
+diff' pa@(PrimApp pf a) dx = diffprimapp pf a dx -- TODO TODO TODO
 
-diff' (Index _ _) _ = constant 0
+diff' (Index _ _) _ = constant 22
 
-diff' (LinearIndex _ _) _ = constant 0 -- TODO
+diff' (LinearIndex _ _) _ = constant 23 -- TODO
 
-diff' (Shape _) _ = constant 0
+diff' (Shape _) _ = constant 24
 
-diff' (ShapeSize _) _ = constant 0
+diff' (ShapeSize _) _ = constant 25
 
-diff' (Intersect _ _) _ = constant 0 -- TODO
+diff' (Intersect _ _) _ = constant 26 -- TODO
 
-diff' (Foreign _ _ _) _ = constant 0 -- TODO
+diff' (Foreign _ _ _) _ = constant 27 -- TODO
 
 
+diffprimapp :: (Elt a, Elt b, Eq b, IsFloating b, Eq tx, Elt tx, IsFloating tx, DifferentiatePrimFun (PrimFun (a -> b)))
+            => PrimFun (a -> b) -> Exp a -> Exp tx -> Exp b
+diffprimapp pf a dx = diffprimfun pf a dx
 
-chainUnary :: ( IsNum tf, Elt tf, IsFloating tf, Eq tf
-              , IsNum tx, Elt tx, IsFloating tx, Eq tx)
+
+chainUnary :: ( Elt tf, IsFloating tf, Eq tf
+              , Elt tx, IsFloating tx, Eq tx)
            => Exp tf
            -> Exp tf
            -> Exp tx
@@ -93,8 +91,8 @@ chainUnary :: ( IsNum tf, Elt tf, IsFloating tf, Eq tf
 
 chainUnary dexp a dx = dexp * (diff a dx)
 
-chainBinary :: ( IsNum tf, Elt tf, IsFloating tf, Eq tf
-               , IsNum tx, Elt tx, IsFloating tx, Eq tx)
+chainBinary :: (Elt tf, IsFloating tf, Eq tf
+               ,Elt tx, IsFloating tx, Eq tx)
             => Exp tf -> Exp tf
             -> Exp tf -> Exp tf
             -> Exp tx
@@ -117,142 +115,276 @@ type family ResultT pf
 type instance ArgT (PrimFun (a -> b)) = a
 type instance ResultT (PrimFun (a -> b)) = b
 
--- Outer class of all PrimFun s
--- TODO - if this does not work, use type families to specify types
-class DifferentiatePrimFun pf where
-  diffprimfun :: ( Elt (ArgT pf)
-                 , Elt (ResultT pf)
-                 , Elt tx, Eq tx, IsFloating tx
-                 )
-              => pf
-              -> Exp (ArgT pf)
-              -> Exp tx
-              -> Exp (ResultT pf)
+--type family TypeMatchResult pf where
+--  TypeMatchResult (PrimFun (Float -> Float)) = PFUnaryFloatFloat
+--  TypeMatchResult (PrimFun (CFloat -> CFloat)) = PFUnaryFloatFloat
+--  TypeMatchResult (PrimFun (Double -> Double)) = PFUnaryFloatFloat
+--  TypeMatchResult (PrimFun (CDouble -> CDouble)) = PFUnaryFloatFloat
+--
+--  TypeMatchResult (PrimFun ((Float, Float) -> Float)) = PFBinaryFloatFloat
+--  TypeMatchResult (PrimFun ((CFloat, CFloat) -> CFloat)) = PFBinaryFloatFloat
+--  TypeMatchResult (PrimFun ((Double, Double) -> Double)) = PFBinaryFloatFloat
+--  TypeMatchResult (PrimFun ((CDouble, CDouble) -> CDouble)) = PFBinaryFloatFloat
+--
+--  TypeMatchResult (PrimFun (a -> Float)) = PFUnaryOtherFloat
+--  TypeMatchResult (PrimFun (a -> CFloat)) = PFUnaryOtherFloat
+--  TypeMatchResult (PrimFun (a -> Double)) = PFUnaryOtherFloat
+--  TypeMatchResult (PrimFun (a -> CDouble)) = PFUnaryOtherFloat
+--
+--  TypeMatchResult (PrimFun (a -> a)) = PFUseless
 
--- Inner class with flags
-class DifferentiatePrimFun' flag pf where
-  diffprimfun' :: ( Elt (ArgT pf)
-                  , Elt (ResultT pf)
-                  , Elt tx, Eq tx, IsFloating tx
---                  , IsFloating (ArgT pf)
---                  , IsFloating (ResultT pf)
---                  , IsFloating tx
-                  )
-               => flag
-               -> pf
-               -> Exp (ArgT pf)
-               -> Exp tx
-               -> Exp (ResultT pf)
-
-type family TypeMatchResult pf where
-  TypeMatchResult (PrimFun (Float -> Float)) = PFUnaryFloatFloat
-  TypeMatchResult (PrimFun (CFloat -> CFloat)) = PFUnaryFloatFloat
-  TypeMatchResult (PrimFun (Double -> Double)) = PFUnaryFloatFloat
-  TypeMatchResult (PrimFun (CDouble -> CDouble)) = PFUnaryFloatFloat
-
-  TypeMatchResult (PrimFun ((Float, Float) -> Float)) = PFBinaryFloatFloat
-  TypeMatchResult (PrimFun ((CFloat, CFloat) -> CFloat)) = PFBinaryFloatFloat
-  TypeMatchResult (PrimFun ((Double, Double) -> Double)) = PFBinaryFloatFloat
-  TypeMatchResult (PrimFun ((CDouble, CDouble) -> CDouble)) = PFBinaryFloatFloat
-
-  TypeMatchResult (PrimFun (a -> Float)) = PFUnaryOtherFloat
-  TypeMatchResult (PrimFun (a -> CFloat)) = PFUnaryOtherFloat
-  TypeMatchResult (PrimFun (a -> Double)) = PFUnaryOtherFloat
-  TypeMatchResult (PrimFun (a -> CDouble)) = PFUnaryOtherFloat
-
-  TypeMatchResult (PrimFun (a -> a)) = PFUseless
-
-instance (DifferentiatePrimFun' flag pf, TypeMatchResult pf ~ flag) => DifferentiatePrimFun pf where
-  diffprimfun = diffprimfun' (undefined::flag)
-
--- ...
-
--- Type level flags for classifying PrimFun s
-data PFUnaryFloatFloat  -- Floating -> Floating
-data PFBinaryFloatFloat -- (Floating, Floating ) -> Floating
-data PFUnaryOtherFloat  -- Other -> Floating
-data PFUseless          -- Other -> Other
 
 
 -- In order of definition in Accelerate:
 -- Some credit goes to Wolfram Alpha
-instance (IsFloating a, Elt a, Eq a, PFUnaryFloatFloat ~ flag) => DifferentiatePrimFun' flag (PrimFun (a -> a)) where
+diffprimfunFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx)
+              => (PrimFun (a -> a))
+              -> Exp a
+              -> Exp tx
+              -> Exp a
 
-  -- basic stuff
-  diffprimfun' _ (PrimNeg ty) a dx = mkNeg $ diff a dx
+-- basic stuff
+diffprimfunFF (PrimNeg ty) a dx = mkNeg $ diff a dx
 
-  diffprimfun' _ (PrimAbs ty) a dx = chainUnary (signum a) a dx
+diffprimfunFF (PrimAbs ty) a dx = chainUnary (signum a) a dx
 
-  diffprimfun' _ (PrimSig ty) a _ = constant 0
+diffprimfunFF (PrimSig ty) a _ = constant 30
 
-  diffprimfun' _ (PrimRecip ty) a dx = chainUnary (a**(-2)) a dx
+diffprimfunFF (PrimRecip ty) a dx = chainUnary (a**(-2)) a dx
 
-  -- trig
-  diffprimfun' _ (PrimSin ty) a dx = chainUnary (cos a) a dx
+-- trig
+diffprimfunFF (PrimSin ty) a dx = chainUnary (cos a) a dx
 
-  diffprimfun' _ (PrimCos ty) a dx = chainUnary (- sin a) a dx
+diffprimfunFF (PrimCos ty) a dx = chainUnary (- sin a) a dx
 
-  diffprimfun' _ (PrimTan ty) a dx = chainUnary ((cos a)**(-2)) a dx
+diffprimfunFF (PrimTan ty) a dx = chainUnary ((cos a)**(-2)) a dx
 
-  -- inverse trig
-  diffprimfun' _ (PrimAsin ty) a dx = chainUnary (1/(sqrt (1 - a**2))) a dx
+-- inverse trig
+diffprimfunFF (PrimAsin ty) a dx = chainUnary (1/(sqrt (1 - a**2))) a dx
 
-  diffprimfun' _ (PrimAcos ty) a dx = chainUnary (-1/(sqrt (1 - a**2))) a dx
+diffprimfunFF (PrimAcos ty) a dx = chainUnary (-1/(sqrt (1 - a**2))) a dx
 
-  diffprimfun' _ (PrimAtan ty) a dx = chainUnary (1/(1+a**2)) a dx
+diffprimfunFF (PrimAtan ty) a dx = chainUnary (1/(1+a**2)) a dx
 
-  -- inverse hyperbolic
-  diffprimfun' _ (PrimAsinh ty) a dx = chainUnary (1/(sqrt (1 + a**2))) a dx
+-- inverse hyperbolic
+diffprimfunFF (PrimAsinh ty) a dx = chainUnary (1/(sqrt (1 + a**2))) a dx
 
-  diffprimfun' _ (PrimAcosh ty) a dx = chainUnary (1/(sqrt (a**2 - 1))) a dx
+diffprimfunFF (PrimAcosh ty) a dx = chainUnary (1/(sqrt (a**2 - 1))) a dx
 
-  diffprimfun' _ (PrimAtanh ty) a dx = chainUnary (1/(1 - a**2)) a dx
+diffprimfunFF (PrimAtanh ty) a dx = chainUnary (1/(1 - a**2)) a dx
 
-  -- other important funcs
-  diffprimfun' _ (PrimExpFloating ty) a dx = chainUnary a a dx
+-- other important funcs
+diffprimfunFF (PrimExpFloating ty) a dx = chainUnary a a dx
 
-  diffprimfun' _ (PrimSqrt ty) a dx = chainUnary (0.5 * a** (-0.5)) a dx
+diffprimfunFF (PrimSqrt ty) a dx = chainUnary (0.5 * a** (-0.5)) a dx
 
-  diffprimfun' _ (PrimLog ty) a dx = chainUnary (recip a) a dx
+diffprimfunFF (PrimLog ty) a dx = chainUnary (recip a) a dx
 
-instance (IsFloating a, Elt a, Eq a) => DifferentiatePrimFun' PFBinaryFloatFloat (PrimFun ((a,a) -> a)) where
 
-  -- DMAS
-  diffprimfun' _ (PrimAdd ty) ta1a2 dx = chainBinary 1 1 a1 a2 dx where
-    (a1, a2) = untup2 ta1a2
 
-  diffprimfun' _ (PrimSub ty) ta1a2 dx = chainBinary 1 (-1) a1 a2 dx where
-    (a1, a2) = untup2 ta1a2
 
-  diffprimfun' _ (PrimMul ty) ta1a2 dx = chainBinary a2 a1 a1 a2 dx where
-    (a1, a2) = untup2 ta1a2
+-- Binary funcs
+diffprimfunTFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx)
+               => PrimFun ((a,a) -> a)
+               -> Exp (a, a)
+               -> Exp tx
+               -> Exp a
 
-  diffprimfun' _ (PrimFDiv ty) ta1a2 dx = chainBinary (1/a2) (-a1/a2**2) a1 a2 dx where
-    (a1, a2) = untup2 ta1a2
+-- DMAS
+diffprimfunTFF (PrimAdd ty) ta1a2 dx = chainBinary 1 1 a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
 
-  -- O and inverse O
-  diffprimfun' _ (PrimFPow ty) ta1a2 dx = chainBinary (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
-    (a1, a2) = untup2 ta1a2
+diffprimfunTFF (PrimSub ty) ta1a2 dx = chainBinary 1 (-1) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
 
-  diffprimfun' _ (PrimLogBase ty) ta1a2 dx = chainBinary (-(log a2)/(a1*(log a1)**2)) (recip (log a1 * log a2)) a1 a2 dx where
-    (a1, a2) = untup2 ta1a2
+diffprimfunTFF (PrimMul ty) ta1a2 dx = chainBinary a2 a1 a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
 
-  diffprimfun' _ (PrimAtan2 ty) ta1a2 dx = (chainBinary (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
-    (a1, a2) = untup2 ta1a2
+diffprimfunTFF (PrimFDiv ty) ta1a2 dx = chainBinary (1/a2) (-a1/a2**2) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
 
-  diffprimfun' _ (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
-    (a1, a2) = untup2 ta1a2
+-- O and inverse O
+diffprimfunTFF (PrimFPow ty) ta1a2 dx = chainBinary (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
 
-  diffprimfun' _ (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
-    (a1, a2) = untup2 ta1a2
+diffprimfunTFF (PrimLogBase ty) ta1a2 dx = chainBinary (-(log a2)/(a1*(log a1)**2)) (recip (log a1 * log a2)) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimAtan2 ty) ta1a2 dx = (chainBinary (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+  (a1, a2) = untup2 ta1a2
 
 -- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
 
-instance (IsFloating tb, Elt tb, Eq tb,
-          IsIntegral ta, Elt ta, Eq ta
-          ) => DifferentiatePrimFun' PFUnaryOtherFloat (PrimFun (ta -> tb)) where
-                 diffprimfun' _ (PrimFromIntegral t1 t2) _ _ = constant 0
+diffprimFunOF :: (IsFloating tb, Elt tb, Eq tb,
+                  IsIntegral ta, Elt ta, Eq ta,
+                  IsFloating tx, Elt tx, Eq tx
+                  )
+              => PrimFun (ta -> tb) -> Exp ta -> Exp tx -> Exp tb
+diffprimFunOF _ _ _ = constant 63
 
--- Default:
-instance (Num (ResultT pf), PFUseless ~ flag) => DifferentiatePrimFun' flag pf where
-  diffprimfun' _ (fun::pf) a dx = constant (69::ResultT pf)
+-- Unify
+-- Couldn't get AdvancedOverlap from the wiki to work for my case
+
+-- This could be a problem: pf here allows the return type to be anything
+-- Whereas it's constrained elsewhere to be Elt, Eq, IsFloating
+class (Elt (PfTA pf), Eq (PfTA pf), IsFloating (PfTA pf), Elt (PfTB pf), Eq (PfTB pf), IsFloating (PfTB pf)) => PrimFunDifferentiableUnary pf where
+  diffprimfun''''' :: (Eq tx, Elt tx, IsFloating tx) => pf -> Exp (PfTA pf) -> Exp tx -> Exp (PfTB pf)
+
+instance PrimFunDifferentiableUnary (PrimFun (Float -> Float)) where
+  diffprimfun''''' _ _ _ = constant 72
+instance PrimFunDifferentiableUnary (PrimFun (Double -> Double)) where
+  diffprimfun''''' _ _ _ = constant 72
+instance PrimFunDifferentiableUnary (PrimFun (CFloat -> CFloat)) where
+  diffprimfun''''' _ _ _ = constant 72
+instance PrimFunDifferentiableUnary (PrimFun (CDouble -> CDouble)) where
+  diffprimfun''''' _ _ _ = constant 72
+-- instance PrimFunDifferentiableUnary (PrimFun ((Float, Float) -> Float)) where
+--   diffprimfun''''' _ _ _ = constant 72
+-- instance PrimFunDifferentiableUnary (PrimFun ((Double, Double) -> Double)) where
+--   diffprimfun''''' _ _ _ = constant 72
+-- instance PrimFunDifferentiableUnary (PrimFun ((CFloat, CFloat) -> CFloat)) where
+--   diffprimfun''''' _ _ _ = constant 72
+-- instance PrimFunDifferentiableUnary (PrimFun ((CDouble, CDouble) -> CDouble)) where
+--   diffprimfun''''' _ _ _ = constant 72
+
+-- All of these are arguments that make PrimFun differentiable
+-- class PrimFunDifferentiableWithArgs a b where
+--   diffprimfun'' :: (Eq tx, Elt tx, IsFloating tx) => PrimFun (a -> b) -> Exp a -> Exp tx -> Exp b
+-- 
+-- instance PrimFunDifferentiableWithArgs Float Float where
+--   diffprimfun'' _ _ _ = constant 68.0 -- diffprimfun''FF
+-- instance PrimFunDifferentiableWithArgs CFloat CFloat where
+--   diffprimfun'' = diffprimfunFF
+-- instance PrimFunDifferentiableWithArgs Double Double where
+--   diffprimfun'' = diffprimfunFF
+-- instance PrimFunDifferentiableWithArgs CDouble CDouble where
+--   diffprimfun'' = diffprimfunFF
+-- 
+-- instance PrimFunDifferentiableWithArgs (Float, Float) Float where
+--   diffprimfun'' = diffprimfunTFF
+-- instance PrimFunDifferentiableWithArgs (CFloat, CFloat) CFloat where
+--   diffprimfun'' = diffprimfunTFF
+-- instance PrimFunDifferentiableWithArgs (Double, Double) Double where
+--   diffprimfun'' = diffprimfunTFF
+-- instance PrimFunDifferentiableWithArgs (CDouble, CDouble) CDouble where
+--   diffprimfun'' = diffprimfunTFF
+
+
+-- Get input and output types for all PrimFuns
+type family PfTA pf :: *
+type family PfTB pf :: *
+
+type instance PfTA (PrimFun (a -> b)) = a
+type instance PfTB (PrimFun (a -> b)) = b
+
+class ValidPrimFun pf where {}
+
+instance (Elt (PfTA pf), Elt (PfTB pf), Eq (PfTB pf), IsFloating (PfTB pf)) => ValidPrimFun pf
+
+-- Accept all primfuns
+class (ValidPrimFun pf) => DifferentiatePrimFun pf where
+  diffprimfun :: (Elt tx, Eq tx, IsFloating tx) => pf -> Exp (PfTA pf) -> Exp tx -> Exp (PfTB pf)
+  showdiff :: pf -> String
+
+class (ValidPrimFun pf) => DifferentiatePrimFun' flag pf where
+  diffprimfun' :: (Elt tx, Eq tx, IsFloating tx) => flag -> pf -> Exp (PfTA pf) -> Exp tx -> Exp (PfTB pf)
+  showdiff' :: flag -> pf -> String
+
+instance ( DifferentiablePred pf flag
+         , DifferentiatePrimFun' flag pf) => DifferentiatePrimFun pf where
+  diffprimfun = diffprimfun' (undefined::flag)
+  showdiff = showdiff' (undefined::flag)
+
+
+class (ValidPrimFun pf) => DifferentiablePred pf flag | pf -> flag where {}
+
+instance {-# OVERLAPPING #-} (ValidPrimFun pf, TypeCast flag HFalse) => DifferentiablePred pf flag
+
+instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (Float -> Float)) HTrue
+instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (Double -> Double)) HTrue
+instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (CFloat -> CFloat)) HTrue
+instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (CDouble -> CDouble)) HTrue
+-- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((Float, Float) -> Float)) HTrue
+-- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((Double, Double) -> Float)) HTrue
+-- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((CFloat, CFloat) -> Float)) HTrue
+-- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((CDouble, CDouble) -> Float)) HTrue
+
+data HTrue
+data HFalse
+
+instance (PrimFunDifferentiableUnary pf) => DifferentiatePrimFun' HTrue pf where
+  diffprimfun' _ = diffprimfun'''''
+  showdiff' _ _ = "Differentiable Unary Function"
+
+instance (ValidPrimFun pf) => DifferentiatePrimFun' HFalse pf where
+  diffprimfun' _ _ _ _ = undefined
+  showdiff' _ _ = "Some other function"
+
+
+class TypeCast   a b   | a -> b, b->a   where typeCast   :: a -> b
+class TypeCast'  t a b | t a -> b, t b -> a where typeCast'  :: t->a->b
+class TypeCast'' t a b | t a -> b, t b -> a where typeCast'' :: t->a->b
+instance TypeCast'  () a b => TypeCast a b where typeCast x = typeCast' () x
+instance TypeCast'' t a b => TypeCast' t a b where typeCast' = typeCast''
+instance TypeCast'' () a a where typeCast'' _ x  = x
+
+-- FFS. Show using exact code from Test
+
+
+
+class Print a where
+    print :: a -> IO ()
+
+{- the following does not work:
+instance Show a => Print a where
+    print x = putStrLn (show x)
+instance        Print a where
+    print x = putStrLn "No show method"
+
+error:
+    Duplicate instance declarations:
+      instance (Show a) => Print a -- Defined at /tmp/wiki.hs:7:0
+      instance Print a -- Defined at /tmp/wiki.hs:9:0
+-}
+
+class Print' flag a where
+    print' :: flag -> a -> IO ()
+
+instance (ShowPred a flag, Print' flag a) => Print a where
+    print = print' (undefined::flag)
+
+
+-- overlapping instances are used only for ShowPred
+class ShowPred a flag | a->flag where {}
+
+                                  -- Used only if the other
+                                  -- instances don't apply
+instance {-# OVERLAPPING #-} TypeCast flag HFalse => ShowPred a flag
+
+--instance ShowPred Int  HTrue   -- These instances should be
+--instance ShowPred Bool HTrue   -- the same as Show's
+--instance ShowPred a flag => ShowPred [a] flag
+
+instance Show (PrimFun (Float -> Float)) where
+  show fun = "PrimFun (Float -> Float)"
+instance Show (PrimFun Float) where
+  show fun = "PrimFun (Float)"
+
+instance Show (PrimFun (Int -> String)) where
+  show fun = "PrimFun someothertype"
+
+instance {-# OVERLAPPING #-} ShowPred (PrimFun a) HTrue
+
+
+
+instance Show a => Print' HTrue a where
+   print' _ x = putStrLn (show x)
+instance Print' HFalse a where
+   print' _ x = putStrLn "No show method"
+

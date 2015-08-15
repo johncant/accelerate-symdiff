@@ -71,8 +71,8 @@ library
   -- LANGUAGE extensions used by modules in this package.
   other-extensions: FlexibleInstances
                   , FlexibleContexts
-                  , UndecidableInstances
-                  , MultiParamTypeClasses
+--                  , UndecidableInstances
+--                  , MultiParamTypeClasses
                   , ScopedTypeVariables
                   , GADTs
                   , RankNTypes
@@ -80,7 +80,7 @@ library
                   , KindSignatures
                   , InstanceSigs
                   , TypeFamilies
-                  , OverlappingInstances
+--                  , OverlappingInstances
                   , AllowAmbiguousTypes
                   , EmptyDataDecls
   -- Other library packages from which modules are imported.
