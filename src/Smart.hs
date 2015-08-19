@@ -5,36 +5,106 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE IncoherentInstances #-}
 
 module Smart where
 
 import Prelude hiding ((>*), (<*))
 import Data.Array.Accelerate.Type (IsFloating, NumType(..), numType)
-import Data.Array.Accelerate.Array.Sugar (Elt)
+import Data.Array.Accelerate.Array.Sugar (Elt, Foreign)
 import Data.Array.Accelerate.Smart
 --import Data.Array.Accelerate.Smart (Acc, Exp(..), PreExp(..))
 import Data.Array.Accelerate.AST (PrimFun(..))
 import Data.Array.Accelerate.Tuple (Tuple(..))
 import Foreign.C.Types (CFloat, CDouble)
 import Data.Array.Accelerate
+import Types
 import AST
 
-diff :: (Eq t, Elt t, IsFloating t, Eq tx, Elt tx, IsFloating tx) => Exp t -> Exp tx -> Exp t
-diff expf@(Exp f) expx@(Exp x) = case f ===== x of
-                                  True -> (constant 1.0)
-                                  False -> diff' f expx
+-- class Diff t tx eq | t tx -> eq where
+--   diff :: Exp t -> Exp tx -> Exp t
+-- 
+-- instance (Eq t, Elt t, IsFloating t) => Diff t t HTrue where
+--   diff expf@(Exp f) expx@(Exp x) = case f ==== x of
+--                                     True -> (constant 1.0)
+--                                     False -> diff f expx
+-- 
+-- instance (Eq t, Elt t, IsFloating t, Eq tx, Elt tx, IsFloating tx, eq ~ HFalse) => Diff t tx eq where
+--   diff expf@(Exp f) expx@(Exp x) = case f ===== x of
+--                                     True -> (constant 1.0)
+--                                     False -> diff f expx
+
 
 -- Now we are free to ignore f == x .
 
+-- Replace the marker for X with something
+replace :: (Elt tf, Elt tx) => Exp tf -> Exp tx -> Exp tx -> Exp tf
+replace (Exp f) x x' = replacePreExp f x x'
+
+replaceTup :: (Elt tx) => Tuple Exp t -> Exp tx -> Exp tx -> Tuple Exp t
+replaceTup NilTup x x' = NilTup
+replaceTup (SnocTup t v) x x' = (t' `SnocTup` v') where
+  t' = replaceTup t x x'
+  v' = replace v x x'
+
+
+
+replacePreExp :: (Elt tf, Elt tx) => PreExp Acc Exp tf -> Exp tx -> Exp tx -> Exp tf
+
+replacePreExp (Tuple t) x x' = Exp $ Tuple $ replaceTup t x x'
+
+replacePreExp (Cond c l r) x x' = Exp $ Cond c' l' r' where
+  c' = replace c x x'
+  l' = replace l x x'
+  r' = replace r x x'
+
+replacePreExp pa@(PrimApp pf a) x x' = Exp $ PrimApp pf (replace a x x') -- TODO TODO TODO
+replacePreExp f@(Foreign f1 f2 f3) x x'= replaceForeign'' f f1 f2 f3 x x'
+replacePreExp f _ _ = Exp f
+
+--replaceForeign' :: (Elt a, Elt b, Foreign f) => f a b -> (Exp a -> Exp b) -> Exp a -> Exp tx -> Exp tx -> Exp b
+--replaceForeign' WithRespectTo f2 f3 x x' = replaceForeign f3 x x'
+--replaceForeign
+
+class (Foreign f) => ReplaceForeignSelectForeignInstance (f :: * -> * -> *) match where
+  replaceForeign'' :: (Elt a, Elt b, Elt c) => PreExp Acc Exp a -> f c a -> (Exp c -> Exp a) -> Exp c -> Exp b -> Exp b -> Exp a
+
+instance {-# OVERLAPS #-} ReplaceForeignSelectForeignInstance WithRespectTo HTrue where
+  replaceForeign'' f f1@(WithRespectTo _) f2 f3 x x' = replaceForeign f f1 f2 f3 x x'
+
+instance {-# OVERLAPPABLE #-} (Foreign f, match ~ HFalse) => ReplaceForeignSelectForeignInstance f match where
+  replaceForeign'' f f1 f2 f3 x x' = undefined -- Can't differentiate stuff outside of AST
+
+
+
+class (Elt a, Elt b) => ReplaceForeign a b feq | a b -> feq where
+  replaceForeign :: (Elt c) => PreExp Acc Exp a -> WithRespectTo c a -> (Exp c -> Exp a) -> Exp c -> Exp b -> Exp b -> Exp a
+
+instance {-# OVERLAPPABLE #-} (Elt a) => ReplaceForeign a a HTrue where
+  replaceForeign f f1@(WithRespectTo x'') f2 f3 x x' = x'
+
+instance {-# OVERLAPS #-} (Elt a, Elt b, feq ~ HFalse) => ReplaceForeign a b feq where
+  replaceForeign f f1@(WithRespectTo x'') f2 f3 x x' = undefined -- Impossible (haha...)
+
+-- Differentiate an AST
+diff :: ( Elt tf, IsFloating tf, Eq tf
+        , Elt tx, IsFloating tx, Eq tx)
+     => Exp tf
+     -> Exp tx
+     -> Exp tf
+diff (Exp fpreexp) x = diff' fpreexp x
+
+
 diff' :: ( Elt tf, IsFloating tf, Eq tf
-         , Elt tx, IsFloating tx, Eq tx)
+         , Elt tx, IsFloating tx, Eq tx
+         )
             => PreExp Acc Exp tf
             -> Exp tx
             -> Exp tf
 
-diff' tag@(Tag level) _ = Exp $ tag
+diff' tag@(Tag level) _ = constant 1.0 -- Exp $ tag -- TODO we put x as this...  use foreign instead
 
-diff' (Const cf) _ = constant 10
+diff' (Const cf) _ = constant 0
 
 diff' (Tuple t) _ = constant 11 -- tup d0 d1 where
 
@@ -62,7 +132,7 @@ diff' (While _ _ _) _ = constant 20 -- TODO
 
 diff' (PrimConst _) _ = constant 21
 
-diff' pa@(PrimApp pf a) dx = diffprimapp pf a dx -- TODO TODO TODO
+diff' pa@(PrimApp pf a) dx = diffprimfun pf a dx -- TODO TODO TODO
 
 diff' (Index _ _) _ = constant 22
 
@@ -74,16 +144,46 @@ diff' (ShapeSize _) _ = constant 25
 
 diff' (Intersect _ _) _ = constant 26 -- TODO
 
-diff' (Foreign _ _ _) _ = constant 27 -- TODO
+diff' f@(Foreign a b c) _ = constant 1 -- TODO - make this more specific.
 
 
-diffprimapp :: (Elt a, Elt b, Eq b, IsFloating b, Eq tx, Elt tx, IsFloating tx, DifferentiatePrimFun (PrimFun (a -> b)))
+
+diffprimfun :: (Elt a, Elt b, Eq b, IsFloating b, Eq tx, Elt tx, IsFloating tx)
             => PrimFun (a -> b) -> Exp a -> Exp tx -> Exp b
-diffprimapp pf a dx = diffprimfun pf a dx
+diffprimfun pf@(PrimNeg _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimAbs _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimSig _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimRecip _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimSin _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimCos _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimTan _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimAsin _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimAcos _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimAtan _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimAsinh _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimAcosh _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimAtanh _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimExpFloating _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimSqrt _) a dx = diffAllPrimFunsFF pf a dx
+diffprimfun pf@(PrimLog _) a dx = diffAllPrimFunsFF pf a dx
+
+
+
+class (Eq b, IsFloating b, Elt b) => DifferentiatePrimFunFF a b valid | a b -> valid where
+  diffAllPrimFunsFF :: (Elt tx, Eq tx, IsFloating tx) => PrimFun (a -> b) -> Exp a -> Exp tx -> Exp b
+
+instance {-# OVERLAPPING #-} (Eq a, IsFloating a, Elt a) => DifferentiatePrimFunFF a a HTrue where
+  diffAllPrimFunsFF = diffprimfunFF
+
+instance {-# OVERLAPPING #-} (Eq a, Eq b, IsFloating b, Elt b, r ~ HFalse) => DifferentiatePrimFunFF a b r where
+  diffAllPrimFunsFF = undefined
+
+
 
 
 chainUnary :: ( Elt tf, IsFloating tf, Eq tf
-              , Elt tx, IsFloating tx, Eq tx)
+              , Elt tx, IsFloating tx, Eq tx
+              )
            => Exp tf
            -> Exp tf
            -> Exp tx
@@ -92,7 +192,8 @@ chainUnary :: ( Elt tf, IsFloating tf, Eq tf
 chainUnary dexp a dx = dexp * (diff a dx)
 
 chainBinary :: (Elt tf, IsFloating tf, Eq tf
-               ,Elt tx, IsFloating tx, Eq tx)
+               ,Elt tx, IsFloating tx, Eq tx
+               )
             => Exp tf -> Exp tf
             -> Exp tf -> Exp tf
             -> Exp tx
@@ -137,7 +238,8 @@ type instance ResultT (PrimFun (a -> b)) = b
 
 -- In order of definition in Accelerate:
 -- Some credit goes to Wolfram Alpha
-diffprimfunFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx)
+diffprimfunFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx
+                 )
               => (PrimFun (a -> a))
               -> Exp a
               -> Exp tx
@@ -184,7 +286,8 @@ diffprimfunFF (PrimLog ty) a dx = chainUnary (recip a) a dx
 
 
 -- Binary funcs
-diffprimfunTFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx)
+diffprimfunTFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx
+                  )
                => PrimFun ((a,a) -> a)
                -> Exp (a, a)
                -> Exp tx
@@ -228,163 +331,4 @@ diffprimFunOF :: (IsFloating tb, Elt tb, Eq tb,
               => PrimFun (ta -> tb) -> Exp ta -> Exp tx -> Exp tb
 diffprimFunOF _ _ _ = constant 63
 
--- Unify
--- Couldn't get AdvancedOverlap from the wiki to work for my case
-
--- This could be a problem: pf here allows the return type to be anything
--- Whereas it's constrained elsewhere to be Elt, Eq, IsFloating
-class (Elt (PfTA pf), Eq (PfTA pf), IsFloating (PfTA pf), Elt (PfTB pf), Eq (PfTB pf), IsFloating (PfTB pf)) => PrimFunDifferentiableUnary pf where
-  diffprimfun''''' :: (Eq tx, Elt tx, IsFloating tx) => pf -> Exp (PfTA pf) -> Exp tx -> Exp (PfTB pf)
-
-instance PrimFunDifferentiableUnary (PrimFun (Float -> Float)) where
-  diffprimfun''''' _ _ _ = constant 72
-instance PrimFunDifferentiableUnary (PrimFun (Double -> Double)) where
-  diffprimfun''''' _ _ _ = constant 72
-instance PrimFunDifferentiableUnary (PrimFun (CFloat -> CFloat)) where
-  diffprimfun''''' _ _ _ = constant 72
-instance PrimFunDifferentiableUnary (PrimFun (CDouble -> CDouble)) where
-  diffprimfun''''' _ _ _ = constant 72
--- instance PrimFunDifferentiableUnary (PrimFun ((Float, Float) -> Float)) where
---   diffprimfun''''' _ _ _ = constant 72
--- instance PrimFunDifferentiableUnary (PrimFun ((Double, Double) -> Double)) where
---   diffprimfun''''' _ _ _ = constant 72
--- instance PrimFunDifferentiableUnary (PrimFun ((CFloat, CFloat) -> CFloat)) where
---   diffprimfun''''' _ _ _ = constant 72
--- instance PrimFunDifferentiableUnary (PrimFun ((CDouble, CDouble) -> CDouble)) where
---   diffprimfun''''' _ _ _ = constant 72
-
--- All of these are arguments that make PrimFun differentiable
--- class PrimFunDifferentiableWithArgs a b where
---   diffprimfun'' :: (Eq tx, Elt tx, IsFloating tx) => PrimFun (a -> b) -> Exp a -> Exp tx -> Exp b
--- 
--- instance PrimFunDifferentiableWithArgs Float Float where
---   diffprimfun'' _ _ _ = constant 68.0 -- diffprimfun''FF
--- instance PrimFunDifferentiableWithArgs CFloat CFloat where
---   diffprimfun'' = diffprimfunFF
--- instance PrimFunDifferentiableWithArgs Double Double where
---   diffprimfun'' = diffprimfunFF
--- instance PrimFunDifferentiableWithArgs CDouble CDouble where
---   diffprimfun'' = diffprimfunFF
--- 
--- instance PrimFunDifferentiableWithArgs (Float, Float) Float where
---   diffprimfun'' = diffprimfunTFF
--- instance PrimFunDifferentiableWithArgs (CFloat, CFloat) CFloat where
---   diffprimfun'' = diffprimfunTFF
--- instance PrimFunDifferentiableWithArgs (Double, Double) Double where
---   diffprimfun'' = diffprimfunTFF
--- instance PrimFunDifferentiableWithArgs (CDouble, CDouble) CDouble where
---   diffprimfun'' = diffprimfunTFF
-
-
--- Get input and output types for all PrimFuns
-type family PfTA pf :: *
-type family PfTB pf :: *
-
-type instance PfTA (PrimFun (a -> b)) = a
-type instance PfTB (PrimFun (a -> b)) = b
-
-class ValidPrimFun pf where {}
-
-instance (Elt (PfTA pf), Elt (PfTB pf), Eq (PfTB pf), IsFloating (PfTB pf)) => ValidPrimFun pf
-
--- Accept all primfuns
-class (ValidPrimFun pf) => DifferentiatePrimFun pf where
-  diffprimfun :: (Elt tx, Eq tx, IsFloating tx) => pf -> Exp (PfTA pf) -> Exp tx -> Exp (PfTB pf)
-  showdiff :: pf -> String
-
-class (ValidPrimFun pf) => DifferentiatePrimFun' flag pf where
-  diffprimfun' :: (Elt tx, Eq tx, IsFloating tx) => flag -> pf -> Exp (PfTA pf) -> Exp tx -> Exp (PfTB pf)
-  showdiff' :: flag -> pf -> String
-
-instance ( DifferentiablePred pf flag
-         , DifferentiatePrimFun' flag pf) => DifferentiatePrimFun pf where
-  diffprimfun = diffprimfun' (undefined::flag)
-  showdiff = showdiff' (undefined::flag)
-
-
-class (ValidPrimFun pf) => DifferentiablePred pf flag | pf -> flag where {}
-
-instance {-# OVERLAPPING #-} (ValidPrimFun pf, TypeCast flag HFalse) => DifferentiablePred pf flag
-
-instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (Float -> Float)) HTrue
-instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (Double -> Double)) HTrue
-instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (CFloat -> CFloat)) HTrue
-instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun (CDouble -> CDouble)) HTrue
--- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((Float, Float) -> Float)) HTrue
--- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((Double, Double) -> Float)) HTrue
--- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((CFloat, CFloat) -> Float)) HTrue
--- instance {-# OVERLAPPING #-} DifferentiablePred (PrimFun ((CDouble, CDouble) -> Float)) HTrue
-
-data HTrue
-data HFalse
-
-instance (PrimFunDifferentiableUnary pf) => DifferentiatePrimFun' HTrue pf where
-  diffprimfun' _ = diffprimfun'''''
-  showdiff' _ _ = "Differentiable Unary Function"
-
-instance (ValidPrimFun pf) => DifferentiatePrimFun' HFalse pf where
-  diffprimfun' _ _ _ _ = undefined
-  showdiff' _ _ = "Some other function"
-
-
-class TypeCast   a b   | a -> b, b->a   where typeCast   :: a -> b
-class TypeCast'  t a b | t a -> b, t b -> a where typeCast'  :: t->a->b
-class TypeCast'' t a b | t a -> b, t b -> a where typeCast'' :: t->a->b
-instance TypeCast'  () a b => TypeCast a b where typeCast x = typeCast' () x
-instance TypeCast'' t a b => TypeCast' t a b where typeCast' = typeCast''
-instance TypeCast'' () a a where typeCast'' _ x  = x
-
--- FFS. Show using exact code from Test
-
-
-
-class Print a where
-    print :: a -> IO ()
-
-{- the following does not work:
-instance Show a => Print a where
-    print x = putStrLn (show x)
-instance        Print a where
-    print x = putStrLn "No show method"
-
-error:
-    Duplicate instance declarations:
-      instance (Show a) => Print a -- Defined at /tmp/wiki.hs:7:0
-      instance Print a -- Defined at /tmp/wiki.hs:9:0
--}
-
-class Print' flag a where
-    print' :: flag -> a -> IO ()
-
-instance (ShowPred a flag, Print' flag a) => Print a where
-    print = print' (undefined::flag)
-
-
--- overlapping instances are used only for ShowPred
-class ShowPred a flag | a->flag where {}
-
-                                  -- Used only if the other
-                                  -- instances don't apply
-instance {-# OVERLAPPING #-} TypeCast flag HFalse => ShowPred a flag
-
---instance ShowPred Int  HTrue   -- These instances should be
---instance ShowPred Bool HTrue   -- the same as Show's
---instance ShowPred a flag => ShowPred [a] flag
-
-instance Show (PrimFun (Float -> Float)) where
-  show fun = "PrimFun (Float -> Float)"
-instance Show (PrimFun Float) where
-  show fun = "PrimFun (Float)"
-
-instance Show (PrimFun (Int -> String)) where
-  show fun = "PrimFun someothertype"
-
-instance {-# OVERLAPPING #-} ShowPred (PrimFun a) HTrue
-
-
-
-instance Show a => Print' HTrue a where
-   print' _ x = putStrLn (show x)
-instance Print' HFalse a where
-   print' _ x = putStrLn "No show method"
 

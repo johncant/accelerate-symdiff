@@ -63,7 +63,7 @@ test-suite Exp
 library
   -- Modules exported by the library.
   exposed-modules: Symdiff
-  other-modules: AST, Smart
+  other-modules: AST, Smart, Types
   
   -- Modules included in this library but not exported.
   -- other-modules:       
