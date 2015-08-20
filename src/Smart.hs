@@ -282,7 +282,7 @@ diffprimfunFF (PrimAbs ty) a dx = chainUnary (signum a) a dx
 
 diffprimfunFF (PrimSig ty) a _ = constant 0
 
-diffprimfunFF (PrimRecip ty) a dx = chainUnary (a**(-2)) a dx
+diffprimfunFF (PrimRecip ty) a dx = chainUnary (-a**(-2)) a dx
 
 -- trig
 diffprimfunFF (PrimSin ty) a dx = chainUnary (cos a) a dx

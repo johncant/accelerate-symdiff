@@ -53,7 +53,17 @@ tests = do
                   , testDifferentiateFun "sig" (\a -> signum a) ([1.0, -1.0] :: [Double])
                   , testDifferentiateFun "sin" (\a -> sin a) (map (*pi) [0.0, 0.25, 0.5, 0.75, 1, -0.5] :: [Double])
                   , testDifferentiateFun "cos" (\a -> cos a) (map (*pi) [0.0, 0.25, 0.5, 0.75, 1, -0.5] :: [Double])
-                  , testDifferentiateFun "tan" (\a -> tan a) ([0.0, 0.25, 0.5, 0.75, 1, -0.5] :: [Double])
+                  , testDifferentiateFun "tan" (\a -> tan a) (map (*pi) [0.0, 0.25, 0.45, 0.75, 1, -0.45] :: [Double])
+                  , testDifferentiateFun "recip1" (\a -> recip a) ([-2, -1, 1, 2] :: [Double])
+                  , testDifferentiateFun "asin" (\a -> asin a) ([-0.95, -0.5, 0, 0.5, 0.95] :: [Double])
+                  , testDifferentiateFun "acos" (\a -> acos a) ([-0.95, -0.5, 0, 0.5, 0.95] :: [Double])
+                  , testDifferentiateFun "atan" (\a -> atan a) ([-100, -0.5, 0, 0.5, 100] :: [Double])
+                  , testDifferentiateFun "asinh" (\a -> asinh a) ([-0.95, -0.5, 0, 0.5, 0.95] :: [Double])
+                  , testDifferentiateFun "acosh" (\a -> acosh a) ([1.05, 10, 100] :: [Double])
+                  , testDifferentiateFun "atanh" (\a -> atanh a) ([-0.95, -0.5, 0, 0.5, 0.95] :: [Double])
+                  , testDifferentiateFun "exp" (\a -> exp a) ([-10, -0.5, 0, 0.5, 10] :: [Double])
+                  , testDifferentiateFun "sqrt" (\a -> sqrt a) ([0.05, 0.25, 1, 2, 9] :: [Double])
+                  , testDifferentiateFun "log" (\a -> log a) ([0.1, 0.5, 1, 10, 1000000] :: [Double])
                   ] :: [IO [TestInstance]]
   instances' <- sequence instances
   return $ map Test $ concat instances'
