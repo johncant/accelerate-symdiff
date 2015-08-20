@@ -24,40 +24,20 @@ testDifferentiateFun :: (Eq a, Elt a, IsFloating a, Ord a, Fractional a, Num a) 
 testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
 
   testAt xcpu = TestInstance
-    { run = let
-              x = constant xcpu
-              (SMT.Exp dslFrag) = fun x
-              (SMT.Exp dslDerivFrag) = diff fun x
-              result = case (symbolic' - numerical') < tol of
-                        _ -> do
-                          return $ Finished $ Fail "foo"
-                          putStrLn name
-                          putStrLn "Differentiated:"
-                          putStrLn $ SMT.showPreExpOp dslDerivFrag
-                          putStrLn $ show (typeOf dslDerivFrag)
-                          () <- case dslDerivFrag of
-                            (SMT.PrimApp pf@(AST.PrimMul ty) (SMT.Exp a)) -> do
---                              Smart.print pf
---                              putStrLn $ showdiff pf
---                              putStrLn $ SMT.showPreExpOp $
---                                diffprimfun pf a x
-                              putStrLn $ show ty
-                              putStrLn $ show (typeOf dslFrag)
---                              putStrLn $ show dslFrag
-                              putStrLn $ SMT.showPreExpOp a
-                              return ()
-                          putStrLn "Result:"
-                          putStrLn $ SMT.showPreExpOp dslDerivFrag
-                          putStrLn $ show (typeOf dslDerivFrag)
-                          return $ Finished $ Fail (name ++ " x at x =  " ++ show xcpu ++
+    { run = do
+        let
+          x = constant xcpu
+          symbolic = Backend.run $ unit $ diff fun x :: Scalar a
+          numerical = Backend.run $ unit $ (fun (x+dx) - fun x)/dx :: Scalar a
+          symbolic' = (head.toList) symbolic :: a
+          numerical' = (head.toList) numerical :: a
+        case (symbolic' - numerical') < tol of
+          False -> do
+            return $ Finished $ Fail (name ++ " x at x =  " ++ show xcpu ++
                                                     ", expected " ++ show numerical' ++ ", got " ++ show symbolic'
                                                     )
---                        True -> return $ Finished $ Fail (name ++ " x at x =  " ++ show xcpu ++ ":\nExpected " ++ show numerical' ++ ", got " ++ show symbolic')
-              symbolic = Backend.run $ unit $ diff fun x :: Scalar a
-              numerical = Backend.run $ unit $ (fun (x+dx) - fun x)/dx :: Scalar a
-              symbolic' = (head.toList) symbolic :: a
-              numerical' = (head.toList) numerical :: a
-              in result
+          True -> return $ Finished $ Pass -- (name ++ " x at x =  " ++ show xcpu ++ ":\nExpected " ++ show numerical' ++ ", got " ++ show symbolic')
+
     , name = name
     , tags = []
     , options = []
@@ -68,6 +48,13 @@ testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
 
 tests :: IO [Test]
 tests = do
-  instances <- testDifferentiateFun "sin" (\a -> sin a) (map (*3.1415926535898) [0.0, 0.25, 0.5, 0.75, 1, 1.1] :: [Double])
-  return $ map Test instances
+  let instances = [ testDifferentiateFun "neg" (\a -> negate a) ([1.0, -1.0] :: [Double])
+                  , testDifferentiateFun "abs" (\a -> abs a) ([1.0, -1.0] :: [Double])
+                  , testDifferentiateFun "sig" (\a -> signum a) ([1.0, -1.0] :: [Double])
+                  , testDifferentiateFun "sin" (\a -> sin a) (map (*pi) [0.0, 0.25, 0.5, 0.75, 1, -0.5] :: [Double])
+                  , testDifferentiateFun "cos" (\a -> cos a) (map (*pi) [0.0, 0.25, 0.5, 0.75, 1, -0.5] :: [Double])
+                  , testDifferentiateFun "tan" (\a -> tan a) ([0.0, 0.25, 0.5, 0.75, 1, -0.5] :: [Double])
+                  ] :: [IO [TestInstance]]
+  instances' <- sequence instances
+  return $ map Test $ concat instances'
 

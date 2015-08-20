@@ -15,91 +15,106 @@ import Data.Array.Accelerate.Array.Sugar (Elt, Foreign)
 import Data.Array.Accelerate.Smart
 --import Data.Array.Accelerate.Smart (Acc, Exp(..), PreExp(..))
 import Data.Array.Accelerate.AST (PrimFun(..))
-import Data.Array.Accelerate.Tuple (Tuple(..))
+import Data.Array.Accelerate.Tuple (Tuple(..), IsTuple, TupleRepr)
 import Foreign.C.Types (CFloat, CDouble)
 import Data.Array.Accelerate
+import Unsafe.Coerce
 import Types
 import AST
 
--- class Diff t tx eq | t tx -> eq where
---   diff :: Exp t -> Exp tx -> Exp t
--- 
--- instance (Eq t, Elt t, IsFloating t) => Diff t t HTrue where
---   diff expf@(Exp f) expx@(Exp x) = case f ==== x of
---                                     True -> (constant 1.0)
---                                     False -> diff f expx
--- 
--- instance (Eq t, Elt t, IsFloating t, Eq tx, Elt tx, IsFloating tx, eq ~ HFalse) => Diff t tx eq where
---   diff expf@(Exp f) expx@(Exp x) = case f ===== x of
---                                     True -> (constant 1.0)
---                                     False -> diff f expx
+class (Elt a, Elt dx, IsFloating dx) => Differentiate a dx where
+  diff :: Exp a -> Exp dx -> Exp a
+  replace :: Exp a -> Exp dx -> Exp dx -> Exp a
 
+instance (Elt a, IsFloating a) => Differentiate a a where
+  diff (Exp fpreexp) x = diff' fpreexp x
+  replace (Exp f) x x' = replacePreExp f x x'
 
--- Now we are free to ignore f == x .
+instance (Elt a, IsFloating a) => Differentiate (a, a) a where
+  diff f x = tup2 ((diff' x0 x), (diff' x1 x)) where
+    (Exp x0, Exp x1) = untup2 f
+  replace a@(Exp (Tuple t)) x x' = tup2 (replace t0 x x', replace t1 x x') where
+    (t0, t1) = untup2 a
+  replace _ _ _ = tup2 (constant 111, constant 112)
+
 
 -- Replace the marker for X with something
-replace :: (Elt tf, Elt tx) => Exp tf -> Exp tx -> Exp tx -> Exp tf
-replace (Exp f) x x' = replacePreExp f x x'
 
-replaceTup :: (Elt tx) => Tuple Exp t -> Exp tx -> Exp tx -> Tuple Exp t
-replaceTup NilTup x x' = NilTup
-replaceTup (SnocTup t v) x x' = (t' `SnocTup` v') where
-  t' = replaceTup t x x'
-  v' = replace v x x'
+--class ReplaceTupleRepr tr tx flag where
+--  replaceTup :: (Elt tx) => Tuple Exp tr -> Exp tx -> Exp tx -> Tuple Exp tr
+--
+--instance (Elt tx, IsFloating tx) => ReplaceTupleRepr () tx HTrue where
+--  replaceTup _ _ _ = NilTup
+--
+--instance (IsFloating tx, ReplaceTupleRepr tr tx HTrue) => ReplaceTupleRepr (tr, tx) tx HTrue where
+--  replaceTup (SnocTup t v) x x' = (t' `SnocTup` v') where
+--    t' = replaceTup t x x'
+--    v' = replace v x x'
+--
+--instance (ReplaceTupleRepr tr tx HTrue, flag ~ HFalse) => ReplaceTupleRepr (tr, a) tx flag where
+--  replaceTup (SnocTup t v) x x' = (t' `SnocTup` v') where
+--    t' = replaceTup t x x'
+--    v' = v
 
 
+replacePreExp :: (Elt tf, IsFloating tf) => PreExp Acc Exp tf -> Exp tf -> Exp tf -> Exp tf
 
-replacePreExp :: (Elt tf, Elt tx) => PreExp Acc Exp tf -> Exp tx -> Exp tx -> Exp tf
-
-replacePreExp (Tuple t) x x' = Exp $ Tuple $ replaceTup t x x'
+replacePreExp f@(Tag _) _ _ = Exp f
+replacePreExp f@(Const _) _ _ = Exp f
+replacePreExp (Tuple t) x x' = undefined -- (IsTuple tf) => not applicable here
+-- TODO - unsafecoerce might bork
+--replacePreExp f@(Prj i t) (x::tx) x' = Exp $ Prj (unsafeCoerce i) $ replace (unsafeCoerce t) x x' -- TODO i can contain x
 
 replacePreExp (Cond c l r) x x' = Exp $ Cond c' l' r' where
-  c' = replace c x x'
+  c' = c --TODO - x can appear here. replace c x x'
   l' = replace l x x'
   r' = replace r x x'
 
-replacePreExp pa@(PrimApp pf a) x x' = Exp $ PrimApp pf (replace a x x') -- TODO TODO TODO
-replacePreExp f@(Foreign f1 f2 f3) x x'= replaceForeign'' f f1 f2 f3 x x'
-replacePreExp f _ _ = Exp f
-
---replaceForeign' :: (Elt a, Elt b, Foreign f) => f a b -> (Exp a -> Exp b) -> Exp a -> Exp tx -> Exp tx -> Exp b
---replaceForeign' WithRespectTo f2 f3 x x' = replaceForeign f3 x x'
---replaceForeign
-
-class (Foreign f) => ReplaceForeignSelectForeignInstance (f :: * -> * -> *) match where
-  replaceForeign'' :: (Elt a, Elt b, Elt c) => PreExp Acc Exp a -> f c a -> (Exp c -> Exp a) -> Exp c -> Exp b -> Exp b -> Exp a
-
-instance {-# OVERLAPS #-} ReplaceForeignSelectForeignInstance WithRespectTo HTrue where
-  replaceForeign'' f f1@(WithRespectTo _) f2 f3 x x' = replaceForeign f f1 f2 f3 x x'
-
-instance {-# OVERLAPPABLE #-} (Foreign f, match ~ HFalse) => ReplaceForeignSelectForeignInstance f match where
-  replaceForeign'' f f1 f2 f3 x x' = undefined -- Can't differentiate stuff outside of AST
+replacePreExp pa@(PrimApp pf a) x x' = Exp $ PrimApp pf (replaceprimfun pf a x x')
+replacePreExp f@(Foreign f1 f2 f3) x x'= x' -- replaceForeign'' f f1 f2 f3 x x'
+replacePreExp f@(PrimConst _) _ _ = Exp f
+--replacePreExp f _ _ = undefined
 
 
 
-class (Elt a, Elt b) => ReplaceForeign a b feq | a b -> feq where
-  replaceForeign :: (Elt c) => PreExp Acc Exp a -> WithRespectTo c a -> (Exp c -> Exp a) -> Exp c -> Exp b -> Exp b -> Exp a
 
-instance {-# OVERLAPPABLE #-} (Elt a) => ReplaceForeign a a HTrue where
-  replaceForeign f f1@(WithRespectTo x'') f2 f3 x x' = x'
 
-instance {-# OVERLAPS #-} (Elt a, Elt b, feq ~ HFalse) => ReplaceForeign a b feq where
-  replaceForeign f f1@(WithRespectTo x'') f2 f3 x x' = undefined -- Impossible (haha...)
+replaceprimfun :: (Elt a, Elt b, IsFloating b)
+            => PrimFun (a -> b) -> Exp a -> Exp b -> Exp b -> Exp a
+replaceprimfun pf@(PrimNeg _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimAbs _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimSig _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimRecip _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimSin _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimCos _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimTan _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimAsin _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimAcos _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimAtan _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimAsinh _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimAcosh _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimAtanh _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimExpFloating _) a x x' = replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimSqrt _) a x x'= replaceAllPrimFunsFF pf a x x'
+replaceprimfun pf@(PrimLog _) a x x' = replaceAllPrimFunsFF pf a x x'
+
+replaceprimfun pf@(PrimAdd _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimSub _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimMul _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimFDiv _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimFPow _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimLogBase _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimAtan2 _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimMax _) a x x' = replaceAllPrimFunsTFF pf a x x'
+replaceprimfun pf@(PrimMin _) a x x' = replaceAllPrimFunsTFF pf a x x'
 
 -- Differentiate an AST
-diff :: ( Elt tf, IsFloating tf, Eq tf
-        , Elt tx, IsFloating tx, Eq tx)
-     => Exp tf
-     -> Exp tx
-     -> Exp tf
-diff (Exp fpreexp) x = diff' fpreexp x
 
 
-diff' :: ( Elt tf, IsFloating tf, Eq tf
-         , Elt tx, IsFloating tx, Eq tx
+diff' :: ( Elt tf, IsFloating tf
          )
             => PreExp Acc Exp tf
-            -> Exp tx
+            -> Exp tf
             -> Exp tf
 
 diff' tag@(Tag level) _ = constant 1.0 -- Exp $ tag -- TODO we put x as this...  use foreign instead
@@ -148,8 +163,8 @@ diff' f@(Foreign a b c) _ = constant 1 -- TODO - make this more specific.
 
 
 
-diffprimfun :: (Elt a, Elt b, Eq b, IsFloating b, Eq tx, Elt tx, IsFloating tx)
-            => PrimFun (a -> b) -> Exp a -> Exp tx -> Exp b
+diffprimfun :: (Elt a, Elt b, IsFloating b)
+            => PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
 diffprimfun pf@(PrimNeg _) a dx = diffAllPrimFunsFF pf a dx
 diffprimfun pf@(PrimAbs _) a dx = diffAllPrimFunsFF pf a dx
 diffprimfun pf@(PrimSig _) a dx = diffAllPrimFunsFF pf a dx
@@ -168,36 +183,52 @@ diffprimfun pf@(PrimSqrt _) a dx = diffAllPrimFunsFF pf a dx
 diffprimfun pf@(PrimLog _) a dx = diffAllPrimFunsFF pf a dx
 
 
+-- branch based on type a above ^
 
-class (Eq b, IsFloating b, Elt b) => DifferentiatePrimFunFF a b valid | a b -> valid where
-  diffAllPrimFunsFF :: (Elt tx, Eq tx, IsFloating tx) => PrimFun (a -> b) -> Exp a -> Exp tx -> Exp b
+class (IsFloating b, Elt b, Elt a) => DifferentiatePrimFunFF a b valid | a b -> valid where
+  diffAllPrimFunsFF :: PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
+  replaceAllPrimFunsFF :: PrimFun (a -> b) -> Exp a -> Exp b -> Exp b -> Exp b
 
-instance {-# OVERLAPPING #-} (Eq a, IsFloating a, Elt a) => DifferentiatePrimFunFF a a HTrue where
+instance {-# OVERLAPPING #-} (IsFloating a, Elt a) => DifferentiatePrimFunFF a a HTrue where
   diffAllPrimFunsFF = diffprimfunFF
+  replaceAllPrimFunsFF _ = replace
 
-instance {-# OVERLAPPING #-} (Eq a, Eq b, IsFloating b, Elt b, r ~ HFalse) => DifferentiatePrimFunFF a b r where
+instance {-# OVERLAPPING #-} (Elt a, IsFloating b, Elt b, r ~ HFalse) => DifferentiatePrimFunFF a b r where
   diffAllPrimFunsFF = undefined
+  replaceAllPrimFunsFF = undefined
 
 
 
+class (IsFloating b, Elt b, Elt atup) => DifferentiatePrimFunTFF atup b valid | atup b -> valid where
+  diffAllPrimFunsTFF :: PrimFun (atup -> b) -> Exp atup -> Exp b -> Exp b
+  replaceAllPrimFunsTFF :: PrimFun (atup -> b) -> Exp atup -> Exp b -> Exp b -> Exp atup
 
-chainUnary :: ( Elt tf, IsFloating tf, Eq tf
-              , Elt tx, IsFloating tx, Eq tx
-              )
-           => Exp tf
-           -> Exp tf
-           -> Exp tx
-           -> Exp tf
+instance {-# OVERLAPPING #-} (IsFloating a, Elt a) => DifferentiatePrimFunTFF (a, a) a HTrue where
+  diffAllPrimFunsTFF = diffprimfunTFF
+  replaceAllPrimFunsTFF pf a x x' = replace a x x'
+  
+-- tup2 (replace a0 x x', replace a1 x x') where
+--     (a0, a1) = untup2 a
+
+instance {-# OVERLAPPING #-} (Elt a, IsFloating b, Elt b, r ~ HFalse) => DifferentiatePrimFunTFF a b r where
+  diffAllPrimFunsTFF = undefined
+  replaceAllPrimFunsTFF = undefined
+
+
+
+chainUnary :: (Elt t, IsFloating t)
+           => Exp t
+           -> Exp t
+           -> Exp t
+           -> Exp t
 
 chainUnary dexp a dx = dexp * (diff a dx)
 
-chainBinary :: (Elt tf, IsFloating tf, Eq tf
-               ,Elt tx, IsFloating tx, Eq tx
-               )
-            => Exp tf -> Exp tf
-            -> Exp tf -> Exp tf
-            -> Exp tx
-            -> Exp tf
+chainBinary :: (Elt t, IsFloating t)
+            => Exp t -> Exp t
+            -> Exp t -> Exp t
+            -> Exp t
+            -> Exp t
 chainBinary dwrta1 dwrta2 a1 a2 dx = dwrta1 * (diff a1 dx) + dwrta2 * (diff a2 dx)
 
 -- Problem: PrimFun (a -> b) appears in the AST and can be any type in theory
@@ -238,11 +269,10 @@ type instance ResultT (PrimFun (a -> b)) = b
 
 -- In order of definition in Accelerate:
 -- Some credit goes to Wolfram Alpha
-diffprimfunFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx
-                 )
+diffprimfunFF :: Differentiate a a
               => (PrimFun (a -> a))
               -> Exp a
-              -> Exp tx
+              -> Exp a
               -> Exp a
 
 -- basic stuff
@@ -250,7 +280,7 @@ diffprimfunFF (PrimNeg ty) a dx = mkNeg $ diff a dx
 
 diffprimfunFF (PrimAbs ty) a dx = chainUnary (signum a) a dx
 
-diffprimfunFF (PrimSig ty) a _ = constant 30
+diffprimfunFF (PrimSig ty) a _ = constant 0
 
 diffprimfunFF (PrimRecip ty) a dx = chainUnary (a**(-2)) a dx
 
@@ -285,50 +315,49 @@ diffprimfunFF (PrimLog ty) a dx = chainUnary (recip a) a dx
 
 
 
--- Binary funcs
-diffprimfunTFF :: (IsFloating a, Elt a, Eq a, IsFloating tx, Elt tx, Eq tx
+-- -- Binary funcs
+diffprimfunTFF :: (IsFloating a, Elt a
                   )
                => PrimFun ((a,a) -> a)
                -> Exp (a, a)
-               -> Exp tx
+               -> Exp a
                -> Exp a
 
 -- DMAS
 diffprimfunTFF (PrimAdd ty) ta1a2 dx = chainBinary 1 1 a1 a2 dx where
   (a1, a2) = untup2 ta1a2
-
-diffprimfunTFF (PrimSub ty) ta1a2 dx = chainBinary 1 (-1) a1 a2 dx where
-  (a1, a2) = untup2 ta1a2
-
-diffprimfunTFF (PrimMul ty) ta1a2 dx = chainBinary a2 a1 a1 a2 dx where
-  (a1, a2) = untup2 ta1a2
-
-diffprimfunTFF (PrimFDiv ty) ta1a2 dx = chainBinary (1/a2) (-a1/a2**2) a1 a2 dx where
-  (a1, a2) = untup2 ta1a2
-
--- O and inverse O
-diffprimfunTFF (PrimFPow ty) ta1a2 dx = chainBinary (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
-  (a1, a2) = untup2 ta1a2
-
-diffprimfunTFF (PrimLogBase ty) ta1a2 dx = chainBinary (-(log a2)/(a1*(log a1)**2)) (recip (log a1 * log a2)) a1 a2 dx where
-  (a1, a2) = untup2 ta1a2
-
-diffprimfunTFF (PrimAtan2 ty) ta1a2 dx = (chainBinary (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
-  (a1, a2) = untup2 ta1a2
-
-diffprimfunTFF (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
-  (a1, a2) = untup2 ta1a2
-
-diffprimfunTFF (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
-  (a1, a2) = untup2 ta1a2
-
--- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
+-- 
+-- diffprimfunTFF (PrimSub ty) ta1a2 dx = chainBinary 1 (-1) a1 a2 dx where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- diffprimfunTFF (PrimMul ty) ta1a2 dx = chainBinary a2 a1 a1 a2 dx where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- diffprimfunTFF (PrimFDiv ty) ta1a2 dx = chainBinary (1/a2) (-a1/a2**2) a1 a2 dx where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- -- O and inverse O
+-- diffprimfunTFF (PrimFPow ty) ta1a2 dx = chainBinary (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- diffprimfunTFF (PrimLogBase ty) ta1a2 dx = chainBinary (-(log a2)/(a1*(log a1)**2)) (recip (log a1 * log a2)) a1 a2 dx where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- diffprimfunTFF (PrimAtan2 ty) ta1a2 dx = (chainBinary (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- diffprimfunTFF (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- diffprimfunTFF (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+--   (a1, a2) = untup2 ta1a2
+-- 
+-- -- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
 
 diffprimFunOF :: (IsFloating tb, Elt tb, Eq tb,
-                  IsIntegral ta, Elt ta, Eq ta,
-                  IsFloating tx, Elt tx, Eq tx
+                  IsIntegral ta, Elt ta, Eq ta
                   )
-              => PrimFun (ta -> tb) -> Exp ta -> Exp tx -> Exp tb
+              => PrimFun (ta -> tb) -> Exp tb -> Exp tb -> Exp tb
 diffprimFunOF _ _ _ = constant 63
 
 

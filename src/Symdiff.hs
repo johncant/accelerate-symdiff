@@ -13,15 +13,12 @@ import Types
 -- Differentiating an AST that looks like a result less so.
 
 
-
 diff :: ( Elt a, IsFloating a, Eq a
-        , Elt b, IsFloating b, Eq b
         )
-     => (Exp a -> Exp b)
+     => (Exp a -> Exp a)
      -> Exp a
-     -> Exp b
--- diff f (x::Exp a) = diffast where -- SMT.replace diffast fakex x where
-diff f (x::Exp a) = SMT.replace diffast fakex x where
+     -> Exp a
+diff f (x::Exp a) = diffast where
   diffast = SMT.diff (f fakex) fakex
-  fakex = foreignExp (WithRespectTo :: WithRespectTo a a) id (68::Exp a) :: Exp a
+  fakex = foreignExp (WithRespectTo undefined :: WithRespectTo a a) id x :: Exp a
 
