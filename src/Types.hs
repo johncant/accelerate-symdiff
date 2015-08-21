@@ -11,7 +11,14 @@ data HTrue
 
 
 data WithRespectTo t1 t2 where
-  WithRespectTo :: (Elt t1) => Exp t1 -> WithRespectTo t1 t1 deriving (Typeable)
+-- Variable id
+  WithRespectTo :: (Elt t1) => Int -> WithRespectTo t1 t1 deriving (Typeable)
+
 
 instance Foreign WithRespectTo where
-  strForeign f = "x"
+  strForeign (WithRespectTo n) = "WithRespectTo " ++ show n
+
+matchMarkers :: (Foreign f, Foreign g) => f a b -> g c d -> Bool
+matchMarkers f1 f2 = wrt && eq where
+  wrt = take 14 (strForeign f1) == "WithRespectTo "
+  eq = strForeign f2 == strForeign f1

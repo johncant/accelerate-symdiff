@@ -3,6 +3,7 @@
 
 module Exp (tests) where
 
+import Prelude hiding ((<*))
 import Distribution.TestSuite
 import qualified Data.Array.Accelerate.Interpreter as Backend
 import Data.Array.Accelerate hiding (map, (++))
@@ -32,7 +33,8 @@ testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
           symbolic' = (head.toList) symbolic :: a
           numerical' = (head.toList) numerical :: a
         case (symbolic' - numerical') < tol of
-          False -> do
+          -- False -> do
+          _ -> do
             return $ Finished $ Fail (name ++ " x at x =  " ++ show xcpu ++
                                                     ", expected " ++ show numerical' ++ ", got " ++ show symbolic'
                                                     )
@@ -48,7 +50,8 @@ testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
 
 tests :: IO [Test]
 tests = do
-  let instances = [ testDifferentiateFun "neg" (\a -> negate a) ([1.0, -1.0] :: [Double])
+  let whilefunc = (\x -> while (<* 77) (* 3) x)
+      instances = [ testDifferentiateFun "neg" (\a -> negate a) ([1.0, -1.0] :: [Double])
                   , testDifferentiateFun "abs" (\a -> abs a) ([1.0, -1.0] :: [Double])
                   , testDifferentiateFun "sig" (\a -> signum a) ([1.0, -1.0] :: [Double])
                   , testDifferentiateFun "sin" (\a -> sin a) (map (*pi) [0.0, 0.25, 0.5, 0.75, 1, -0.5] :: [Double])
@@ -64,6 +67,9 @@ tests = do
                   , testDifferentiateFun "exp" (\a -> exp a) ([-10, -0.5, 0, 0.5, 10] :: [Double])
                   , testDifferentiateFun "sqrt" (\a -> sqrt a) ([0.05, 0.25, 1, 2, 9] :: [Double])
                   , testDifferentiateFun "log" (\a -> log a) ([0.1, 0.5, 1, 10, 1000000] :: [Double])
+
+                  -- Binary funcs
+
                   , testDifferentiateFun "add1" (\a -> a + 5) ([-3, 0, 2] :: [Double])
                   , testDifferentiateFun "add2" (\a -> 5 + a) ([-3, 0, 2] :: [Double])
                   , testDifferentiateFun "sub1" (\a -> a - 5) ([-3, 0, 2] :: [Double])
@@ -72,7 +78,6 @@ tests = do
                   , testDifferentiateFun "mul2" (\a -> 5 * a) ([-3, 0, 2] :: [Double])
                   , testDifferentiateFun "div1" (\a -> a / 5) ([-3, 0, 2] :: [Double])
                   , testDifferentiateFun "div2" (\a -> 5 / a) ([-3, 0.01, 2] :: [Double])
-
                   , testDifferentiateFun "pow1" (\a -> a ** 5) ([-3, 0, 2] :: [Double])
                   , testDifferentiateFun "pow2" (\a -> 5 ** a) ([-3, 0, 2] :: [Double])
                   , testDifferentiateFun "logb1" (\a -> logBase a 5) ([0.04, 0.8, 25] :: [Double])
@@ -83,6 +88,8 @@ tests = do
                   , testDifferentiateFun "max2" (\a -> max 5 a) ([-4, 0, 7] :: [Double])
                   , testDifferentiateFun "min1" (\a -> min a 5) ([-4, 0, 7] :: [Double])
                   , testDifferentiateFun "min2" (\a -> min 5 a) ([-4, 0, 7] :: [Double])
+
+                  , testDifferentiateFun "while" whilefunc ([0.5, 4] :: [Double])
 
                   ] :: [IO [TestInstance]]
   instances' <- sequence instances

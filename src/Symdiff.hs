@@ -1,6 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Symdiff where
+module Symdiff (diff) where
 
 import Data.Array.Accelerate.Type (IsFloating)
 import Data.Array.Accelerate.Array.Sugar (Elt, Foreign(..))
@@ -13,12 +13,10 @@ import Types
 -- Differentiating an AST that looks like a result less so.
 
 
-diff :: ( Elt a, IsFloating a, Eq a
-        )
-     => (Exp a -> Exp a)
+diff :: SMT.Differentiate b a
+     => (Exp a -> Exp b)
      -> Exp a
-     -> Exp a
-diff f (x::Exp a) = diffast where
-  diffast = SMT.diff (f fakex) fakex
-  fakex = foreignExp (WithRespectTo undefined :: WithRespectTo a a) id x :: Exp a
+     -> Exp b
+diff = SMT.diffScalar
+
 

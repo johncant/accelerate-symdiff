@@ -56,6 +56,7 @@ test-suite Exp
                , accelerate == 0.15.1.0
                , Cabal > 1.9.2
                , accelerate-symdiff
+               , random
   test-module: Exp
   other-modules: Symdiff, Smart, AST
 
@@ -86,6 +87,7 @@ library
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.8 && <4.9
                      , accelerate == 0.15.1.0
+                     , random
   
   -- Directories containing source files.
   hs-source-dirs:      src
