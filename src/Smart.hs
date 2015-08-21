@@ -15,7 +15,7 @@ import Data.Array.Accelerate.Array.Sugar (Elt, Foreign)
 import Data.Array.Accelerate.Smart
 --import Data.Array.Accelerate.Smart (Acc, Exp(..), PreExp(..))
 import Data.Array.Accelerate.AST (PrimFun(..))
-import Data.Array.Accelerate.Tuple (Tuple(..), IsTuple, TupleRepr)
+import Data.Array.Accelerate.Tuple (Tuple(..), IsTuple, TupleRepr, fromTuple, toTuple, TupleIdx(..))
 import Foreign.C.Types (CFloat, CDouble)
 import Data.Array.Accelerate
 import Unsafe.Coerce
@@ -31,8 +31,13 @@ instance (Elt a, IsFloating a) => Differentiate a a where
   replace (Exp f) x x' = replacePreExp f x x'
 
 instance (Elt a, IsFloating a) => Differentiate (a, a) a where
-  diff f x = tup2 ((diff' x0 x), (diff' x1 x)) where
-    (Exp x0, Exp x1) = untup2 f
+  diff f x = tup2 ((diff' f0 x), (diff' f1 x)) where
+    (Exp f0, Exp f1) = case ftup of
+                         SnocTup ftup' f1' ->
+                           case ftup' of
+                             SnocTup ftup'' f0' ->
+                               (f0', f1')
+    Exp (Tuple ftup) = f
   replace a@(Exp (Tuple t)) x x' = tup2 (replace t0 x x', replace t1 x x') where
     (t0, t1) = untup2 a
   replace _ _ _ = tup2 (constant 111, constant 112)
@@ -123,7 +128,28 @@ diff' (Const cf) _ = constant 0
 
 diff' (Tuple t) _ = constant 11 -- tup d0 d1 where
 
-diff' (Prj _ _) _ = constant 12 -- TODO
+-- Not sure we can know at compile time that t is compatible with x
+-- Assume tup0 is a 2-tuple with identical types
+-- TODO
+diff' f@(Prj (i::TupleIdx (TupleRepr tup0) tf) (te::Exp tup0)) x = Exp (Prj i dodgyTupleDiff) where
+  dodgyTupleDiff = unsafeCoerce (diff teDodgy x) :: Exp tup0 where
+  teDodgy = unsafeCoerce te :: Exp (tf, tf)
+
+
+
+-- Failed attempt to unpack tuple.
+--  case te of
+--    (Exp (Tuple t)) -> case t of
+--      NilTup -> constant 0
+--      -- s is TupleRepr something, but there's no static guarantee that there is
+--      SnocTup (prevt :: Tuple Exp s) v -> case i of
+--        ZeroTupIdx -> diff v x
+--        -- Ouch...
+--        SuccTupIdx (previ::TupleIdx s e) -> diff' (Prj previRT prevtRT) x where
+--          previRT = previ
+--          prevtRT = Exp $ Tuple prevt
+
+--        (Prj (unsafeCoerce previ::TupleIdx s e) (Exp $ Tuple prevt)) x
 
 diff' (IndexNil) _ = constant 13
 
@@ -182,8 +208,20 @@ diffprimfun pf@(PrimExpFloating _) a dx = diffAllPrimFunsFF pf a dx
 diffprimfun pf@(PrimSqrt _) a dx = diffAllPrimFunsFF pf a dx
 diffprimfun pf@(PrimLog _) a dx = diffAllPrimFunsFF pf a dx
 
+diffprimfun pf@(PrimAdd _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimSub _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimMul _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimFDiv _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimFPow _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimLogBase _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimAtan2 _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimMax _) a dx = diffAllPrimFunsTFF pf a dx
+diffprimfun pf@(PrimMin _) a dx = diffAllPrimFunsTFF pf a dx
+
 
 -- branch based on type a above ^
+
+
 
 class (IsFloating b, Elt b, Elt a) => DifferentiatePrimFunFF a b valid | a b -> valid where
   diffAllPrimFunsFF :: PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
@@ -326,33 +364,33 @@ diffprimfunTFF :: (IsFloating a, Elt a
 -- DMAS
 diffprimfunTFF (PrimAdd ty) ta1a2 dx = chainBinary 1 1 a1 a2 dx where
   (a1, a2) = untup2 ta1a2
--- 
--- diffprimfunTFF (PrimSub ty) ta1a2 dx = chainBinary 1 (-1) a1 a2 dx where
---   (a1, a2) = untup2 ta1a2
--- 
--- diffprimfunTFF (PrimMul ty) ta1a2 dx = chainBinary a2 a1 a1 a2 dx where
---   (a1, a2) = untup2 ta1a2
--- 
--- diffprimfunTFF (PrimFDiv ty) ta1a2 dx = chainBinary (1/a2) (-a1/a2**2) a1 a2 dx where
---   (a1, a2) = untup2 ta1a2
--- 
--- -- O and inverse O
--- diffprimfunTFF (PrimFPow ty) ta1a2 dx = chainBinary (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
---   (a1, a2) = untup2 ta1a2
--- 
--- diffprimfunTFF (PrimLogBase ty) ta1a2 dx = chainBinary (-(log a2)/(a1*(log a1)**2)) (recip (log a1 * log a2)) a1 a2 dx where
---   (a1, a2) = untup2 ta1a2
--- 
--- diffprimfunTFF (PrimAtan2 ty) ta1a2 dx = (chainBinary (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
---   (a1, a2) = untup2 ta1a2
--- 
--- diffprimfunTFF (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
---   (a1, a2) = untup2 ta1a2
--- 
--- diffprimfunTFF (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
---   (a1, a2) = untup2 ta1a2
--- 
--- -- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
+
+diffprimfunTFF (PrimSub ty) ta1a2 dx = chainBinary 1 (-1) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimMul ty) ta1a2 dx = chainBinary a2 a1 a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimFDiv ty) ta1a2 dx = chainBinary (1/a2) (-a1/a2**2) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
+
+-- O and inverse O
+diffprimfunTFF (PrimFPow ty) ta1a2 dx = chainBinary (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimLogBase ty) ta1a2 dx = chainBinary (-(log a2)/(a1*(log a1)**2)) (recip (log a1 * log a2)) a1 a2 dx where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimAtan2 ty) ta1a2 dx = (chainBinary (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+  (a1, a2) = untup2 ta1a2
+
+diffprimfunTFF (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary 1 a2 dx, chainUnary 1 a1 dx) where
+  (a1, a2) = untup2 ta1a2
+ 
+ -- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
 
 diffprimFunOF :: (IsFloating tb, Elt tb, Eq tb,
                   IsIntegral ta, Elt ta, Eq ta

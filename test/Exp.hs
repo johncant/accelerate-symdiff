@@ -64,6 +64,26 @@ tests = do
                   , testDifferentiateFun "exp" (\a -> exp a) ([-10, -0.5, 0, 0.5, 10] :: [Double])
                   , testDifferentiateFun "sqrt" (\a -> sqrt a) ([0.05, 0.25, 1, 2, 9] :: [Double])
                   , testDifferentiateFun "log" (\a -> log a) ([0.1, 0.5, 1, 10, 1000000] :: [Double])
+                  , testDifferentiateFun "add1" (\a -> a + 5) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "add2" (\a -> 5 + a) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "sub1" (\a -> a - 5) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "sub2" (\a -> 5 - a) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "mul1" (\a -> a * 5) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "mul2" (\a -> 5 * a) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "div1" (\a -> a / 5) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "div2" (\a -> 5 / a) ([-3, 0.01, 2] :: [Double])
+
+                  , testDifferentiateFun "pow1" (\a -> a ** 5) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "pow2" (\a -> 5 ** a) ([-3, 0, 2] :: [Double])
+                  , testDifferentiateFun "logb1" (\a -> logBase a 5) ([0.04, 0.8, 25] :: [Double])
+                  , testDifferentiateFun "logb2" (\a -> logBase 5 a) ([0.04, 0.8, 25] :: [Double])
+                  , testDifferentiateFun "atan21" (\a -> atan2 a 5) ([-10, 0, 3] :: [Double])
+                  , testDifferentiateFun "atan22" (\a -> atan2 5 a) ([-10, 0, 3] :: [Double])
+                  , testDifferentiateFun "max1" (\a -> max a 5) ([-4, 0, 7] :: [Double])
+                  , testDifferentiateFun "max2" (\a -> max 5 a) ([-4, 0, 7] :: [Double])
+                  , testDifferentiateFun "min1" (\a -> min a 5) ([-4, 0, 7] :: [Double])
+                  , testDifferentiateFun "min2" (\a -> min 5 a) ([-4, 0, 7] :: [Double])
+
                   ] :: [IO [TestInstance]]
   instances' <- sequence instances
   return $ map Test $ concat instances'
