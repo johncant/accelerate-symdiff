@@ -58,7 +58,7 @@ test-suite Exp
                , accelerate-symdiff
                , random
   test-module: Exp
-  other-modules: Symdiff, Smart, AST
+  other-modules: Symdiff, Smart, AST, Differentiable, Types
 
 
 library
