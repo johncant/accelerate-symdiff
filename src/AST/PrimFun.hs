@@ -7,20 +7,20 @@
 
 module AST.PrimFun (diffprimfun') where
 
-import Prelude hiding ((>*), (<*))
-import Data.Array.Accelerate.Type (IsFloating, NumType(..), numType)
-import Data.Array.Accelerate.Array.Sugar (Elt, Foreign)
+import Prelude hiding ((<*))
+-- import Data.Array.Accelerate.Type (IsFloating, NumType(..), numType)
+-- import Data.Array.Accelerate.Array.Sugar (Elt, Foreign)
 import Data.Array.Accelerate.Smart
 --import Data.Array.Accelerate.Smart (Acc, Exp(..), PreExp(..))
 import Data.Array.Accelerate.AST (PrimFun(..))
-import Data.Array.Accelerate.Tuple (Tuple(..), IsTuple, TupleRepr, fromTuple, toTuple, TupleIdx(..))
-import Foreign.C.Types (CFloat, CDouble)
+--import Data.Array.Accelerate.Tuple (Tuple(..), IsTuple, TupleRepr, fromTuple, toTuple, TupleIdx(..))
+--import Foreign.C.Types (CFloat, CDouble)
 import Data.Array.Accelerate
-import Unsafe.Coerce
+--import Unsafe.Coerce
 import Types
-import Differentiate (DifferentiateTuple, DifferentiateValue, ToolsT(..))
-import System.Random
-import System.IO.Unsafe
+import Differentiate (DifferentiateValue, ToolsT(..))
+--import System.Random
+--import System.IO.Unsafe
 
 
 
@@ -53,7 +53,7 @@ diffprimfun' tk pf@(PrimAtan2 _) a dx = diffAllPrimFunsTFF tk pf a dx
 diffprimfun' tk pf@(PrimMax _) a dx = diffAllPrimFunsTFF tk pf a dx
 diffprimfun' tk pf@(PrimMin _) a dx = diffAllPrimFunsTFF tk pf a dx
 
-diffprimfun' tk _ _ dx = constant 0
+diffprimfun' _ _ _ _ = constant 0
 
 
 -- branch based on type a above ^
@@ -111,41 +111,41 @@ diffprimfunFF :: (DifferentiateValue a a, ToolsT tk)
               -> Exp a
 
 -- basic stuff
-diffprimfunFF tk (PrimNeg ty) a dx = mkNeg $ diffT tk a dx
+diffprimfunFF tk (PrimNeg _) a dx = mkNeg $ diffT tk a dx
 
-diffprimfunFF tk (PrimAbs ty) a dx = chainUnary tk (signum a) a dx
+diffprimfunFF tk (PrimAbs _) a dx = chainUnary tk (signum a) a dx
 
-diffprimfunFF tk (PrimSig ty) a _ = constant 0
+diffprimfunFF _ (PrimSig _) _ _ = constant 0
 
-diffprimfunFF tk (PrimRecip ty) a dx = chainUnary tk (-a**(-2)) a dx
+diffprimfunFF tk (PrimRecip _) a dx = chainUnary tk (-a**(-2)) a dx
 
 -- trig
-diffprimfunFF tk (PrimSin ty) a dx = chainUnary tk (cos a) a dx
+diffprimfunFF tk (PrimSin _) a dx = chainUnary tk (cos a) a dx
 
-diffprimfunFF tk (PrimCos ty) a dx = chainUnary tk (- sin a) a dx
+diffprimfunFF tk (PrimCos _) a dx = chainUnary tk (- sin a) a dx
 
-diffprimfunFF tk (PrimTan ty) a dx = chainUnary tk ((cos a)**(-2)) a dx
+diffprimfunFF tk (PrimTan _) a dx = chainUnary tk ((cos a)**(-2)) a dx
 
 -- inverse trig
-diffprimfunFF tk (PrimAsin ty) a dx = chainUnary tk (1/(sqrt (1 - a**2))) a dx
+diffprimfunFF tk (PrimAsin _) a dx = chainUnary tk (1/(sqrt (1 - a**2))) a dx
 
-diffprimfunFF tk (PrimAcos ty) a dx = chainUnary tk (-1/(sqrt (1 - a**2))) a dx
+diffprimfunFF tk (PrimAcos _) a dx = chainUnary tk (-1/(sqrt (1 - a**2))) a dx
 
-diffprimfunFF tk (PrimAtan ty) a dx = chainUnary tk (1/(1+a**2)) a dx
+diffprimfunFF tk (PrimAtan _) a dx = chainUnary tk (1/(1+a**2)) a dx
 
 -- inverse hyperbolic
-diffprimfunFF tk (PrimAsinh ty) a dx = chainUnary tk (1/(sqrt (1 + a**2))) a dx
+diffprimfunFF tk (PrimAsinh _) a dx = chainUnary tk (1/(sqrt (1 + a**2))) a dx
 
-diffprimfunFF tk (PrimAcosh ty) a dx = chainUnary tk (1/(sqrt (a**2 - 1))) a dx
+diffprimfunFF tk (PrimAcosh _) a dx = chainUnary tk (1/(sqrt (a**2 - 1))) a dx
 
-diffprimfunFF tk (PrimAtanh ty) a dx = chainUnary tk (1/(1 - a**2)) a dx
+diffprimfunFF tk (PrimAtanh _) a dx = chainUnary tk (1/(1 - a**2)) a dx
 
 -- other important funcs
-diffprimfunFF tk (PrimExpFloating ty) a dx = chainUnary tk a a dx
+diffprimfunFF tk (PrimExpFloating _) a dx = chainUnary tk a a dx
 
-diffprimfunFF tk (PrimSqrt ty) a dx = chainUnary tk (0.5 * a** (-0.5)) a dx
+diffprimfunFF tk (PrimSqrt _) a dx = chainUnary tk (0.5 * a** (-0.5)) a dx
 
-diffprimfunFF tk (PrimLog ty) a dx = chainUnary tk (recip a) a dx
+diffprimfunFF tk (PrimLog _) a dx = chainUnary tk (recip a) a dx
 
 
 
@@ -160,35 +160,35 @@ diffprimfunTFF :: (IsFloating a, Elt a, ToolsT tk
                -> Exp a
 
 -- DMAS
-diffprimfunTFF tk (PrimAdd ty) ta1a2 dx = chainBinary tk 1 1 a1 a2 dx where
+diffprimfunTFF tk (PrimAdd _) ta1a2 dx = chainBinary tk 1 1 a1 a2 dx where
   (a1, a2) = untup2 ta1a2
 
-diffprimfunTFF tk (PrimSub ty) ta1a2 dx = chainBinary tk 1 (-1) a1 a2 dx where
+diffprimfunTFF tk (PrimSub _) ta1a2 dx = chainBinary tk 1 (-1) a1 a2 dx where
   (a1, a2) = untup2 ta1a2
 
-diffprimfunTFF tk (PrimMul ty) ta1a2 dx = chainBinary tk a2 a1 a1 a2 dx where
+diffprimfunTFF tk (PrimMul _) ta1a2 dx = chainBinary tk a2 a1 a1 a2 dx where
   (a1, a2) = untup2 ta1a2
 
-diffprimfunTFF tk (PrimFDiv ty) ta1a2 dx = chainBinary tk (1/a2) (-a1/a2**2) a1 a2 dx where
+diffprimfunTFF tk (PrimFDiv _) ta1a2 dx = chainBinary tk (1/a2) (-a1/a2**2) a1 a2 dx where
   (a1, a2) = untup2 ta1a2
 
 -- O and inverse O
-diffprimfunTFF tk (PrimFPow ty) ta1a2 dx = chainBinary tk (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
+diffprimfunTFF tk (PrimFPow _) ta1a2 dx = chainBinary tk (a2*a1**(a2-1)) (log a1 * a1**a2) a1 a2 dx where
   (a1, a2) = untup2 ta1a2
 
-diffprimfunTFF tk (PrimLogBase ty) ta1a2 dx = chainBinary tk
+diffprimfunTFF tk (PrimLogBase _) ta1a2 dx = chainBinary tk
                                              (-(log a2)/(a1*(log a1)**2))
                                              (recip (a2 * log a1))
                                              a1 a2 dx where
                                                (a1, a2) = untup2 ta1a2
 
-diffprimfunTFF tk (PrimAtan2 ty) ta1a2 dx = (chainBinary tk (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
+diffprimfunTFF tk (PrimAtan2 _) ta1a2 dx = (chainBinary tk (-a2) (-a1) a1 a2 dx)/(a1**2 + a2**2) where
   (a1, a2) = untup2 ta1a2
 
-diffprimfunTFF tk (PrimMax ty) ta1a2 dx = (a2 >* a1) ? (chainUnary tk 1 a2 dx, chainUnary tk 1 a1 dx) where
+diffprimfunTFF tk (PrimMax _) ta1a2 dx = (a2 >* a1) ? (chainUnary tk 1 a2 dx, chainUnary tk 1 a1 dx) where
   (a1, a2) = untup2 ta1a2
 
-diffprimfunTFF tk (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary tk 1 a2 dx, chainUnary tk 1 a1 dx) where
+diffprimfunTFF tk (PrimMin _) ta1a2 dx = (a2 <* a1) ? (chainUnary tk 1 a2 dx, chainUnary tk 1 a1 dx) where
   (a1, a2) = untup2 ta1a2
 
  -- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
@@ -198,5 +198,5 @@ diffprimFunOF :: (IsFloating tb, Elt tb, Eq tb,
                   ToolsT tk
                   )
               => tk -> PrimFun (ta -> tb) -> Exp tb -> Exp tb -> Exp tb
-diffprimFunOF _ _ _ _ = constant 63
+diffprimFunOF _ _ _ _ = constant 0
 

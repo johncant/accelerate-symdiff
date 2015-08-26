@@ -7,9 +7,6 @@ import Prelude hiding ((<*))
 import Distribution.TestSuite
 import qualified Data.Array.Accelerate.Interpreter as Backend
 import Data.Array.Accelerate hiding (map, (++))
-import qualified Data.Array.Accelerate.Smart as SMT (showPreExpOp, Exp(..), PreExp(..))
-import qualified Data.Array.Accelerate.AST as AST (PrimFun(..))
-import Data.Typeable
 import Symdiff (diff)
 
 tol :: (Fractional a) => a
@@ -20,7 +17,7 @@ dx = constant 1e-5
 
 testDifferentiateFun :: (Eq a, Elt a, IsFloating a, Ord a, Fractional a, Num a) => String -> (Exp a -> Exp a) -> [a] -> IO [TestInstance]
 --testDifferentiateFun :: String -> (Exp Float -> Exp Float) -> [Float] -> IO [TestInstance]
-testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
+testDifferentiateFun mathname fun (xs::[a]) = return $ map testAt xs where
 
   testAt xcpu = TestInstance
     { run = do
@@ -32,12 +29,12 @@ testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
           numerical' = (head.toList) numerical :: a
         case (symbolic' - numerical') < tol of
           False -> do
-            return $ Finished $ Fail (name ++ " x at x =  " ++ show xcpu ++
+            return $ Finished $ Fail (mathname ++ " x at x =  " ++ show xcpu ++
                                                     ", expected " ++ show numerical' ++ ", got " ++ show symbolic'
                                                     )
-          True -> return $ Finished $ Pass -- (name ++ " x at x =  " ++ show xcpu ++ ":\nExpected " ++ show numerical' ++ ", got " ++ show symbolic')
+          True -> return $ Finished $ Pass
 
-    , name = name
+    , name = mathname
     , tags = []
     , options = []
     , setOption = \_ _ -> Right $ testAt xcpu

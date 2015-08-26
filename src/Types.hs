@@ -8,13 +8,8 @@ module Types where
 
 
 import Data.Typeable
-import Data.Array.Accelerate.Array.Sugar (Elt, Arrays, Vector)
+import Data.Array.Accelerate.Array.Sugar (Elt, Arrays)
 import Data.Array.Accelerate.Array.Sugar (Foreign(..))
-import Data.Array.Accelerate.Smart (Acc, Exp(..), PreExp(..))
-import Data.Array.Accelerate.AST (PrimFun)
-import Data.Array.Accelerate.Type (IsFloating)
-import Data.Array.Accelerate.Tuple (Atuple(..), Tuple(..), IsTuple, TupleRepr, fromTuple, toTuple, TupleIdx(..))
-import Differentiate
 
 data HFalse
 data HTrue
@@ -29,6 +24,7 @@ data WithRespectTo t1 t2 where
 
 instance Foreign WithRespectTo where
   strForeign (WithRespectTo n) = "WithRespectTo " ++ show n
+  strForeign (WithRespectToA n) = "WithRespectTo " ++ show n
 
 matchMarkers :: (Foreign f, Foreign g) => f a b -> g c d -> Bool
 matchMarkers f1 f2 = wrt && eq where

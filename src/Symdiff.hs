@@ -1,17 +1,13 @@
-{-# LANGUAGE GADTs #-}
+-- {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Symdiff (diff) where
 
-import Data.Array.Accelerate.Type (IsFloating)
-import Data.Array.Accelerate.Array.Sugar (Elt, Foreign(..), Vector)
-import Data.Array.Accelerate.Smart (Acc, Exp(..), PreExp)
-import Data.Array.Accelerate.AST (PrimFun)
-import Data.Array.Accelerate (foreignExp, constant)
+import Data.Array.Accelerate.Smart (Exp)
+import Data.Array.Accelerate (foreignExp)
 import Types
 import qualified AST.Diff
-import qualified AST.Grad
+-- import qualified AST.Grad
 import qualified AST.PrimFun
-import qualified Differentiate
 import Differentiate -- (Differentiate, DifferentiateValue, ToolsT)
 
 import System.Random

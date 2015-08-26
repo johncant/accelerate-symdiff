@@ -11,11 +11,9 @@ import Data.Array.Accelerate.Smart (Acc, Exp(..), PreExp(..))
 import Data.Array.Accelerate.AST (PrimFun)
 import Data.Array.Accelerate.Array.Sugar (Elt, Arrays, Vector)
 import Data.Array.Accelerate.Type (IsFloating)
-import Data.Array.Accelerate.Tuple (Atuple(..), Tuple(..), IsTuple, TupleRepr, fromTuple, toTuple, TupleIdx(..))
+import Data.Array.Accelerate.Tuple (Atuple(..), Tuple(..), IsTuple, TupleRepr)
 
 
--- class (Elt a, Elt dx, IsFloating dx) => DifferentiateValue a dx
--- instance {-# OVERLAPPING #-} (Elt a, IsFloating a) => DifferentiateValue a a
 
 
 class ToolsT t where
@@ -27,13 +25,10 @@ class ToolsT t where
 --                   , mapdiffT :: Differentiate => Acc (Vector a) -> Acc (Vector dx) -> Acc (Vector a)
 --                   , jacobianF :: Differentiate => (Acc (Vector dx) -> Acc (Vector a)) -> Acc (Vector dx) -> Acc (Array (DIM0:.DIM1:.DIM2) a)
 --                   , jacobianT :: Differentiate => Exp a -> Exp dx -> Exp a
-  diffprimfun :: forall a b dx. (Elt a, Elt b, IsFloating b) => t -> PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
-  diff' :: forall a b dx. (Elt a, IsFloating a) => t -> PreExp Acc Exp a -> Exp a -> Exp a
+  diffprimfun :: forall a b. (Elt a, Elt b, IsFloating b) => t -> PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
+  diff' :: forall a. (Elt a, IsFloating a) => t -> PreExp Acc Exp a -> Exp a -> Exp a
 
 
-
--- class (Differentiate a dx, IsFloating dx) => DifferentiateValue a dx
--- instance {-# OVERLAPPING #-} (Differentiate a dx, IsFloating dx) => DifferentiateValue a dx
 
 
 
@@ -43,12 +38,14 @@ class (Elt a, Elt dx, IsFloating dx) => DifferentiateTupleRepr a dx where
 --  gradtr :: tk -> Tuple Exp a -> Acc (Vector dx) -> Tuple Exp a
 
 instance (Elt dx, IsFloating dx) => DifferentiateTupleRepr () dx where
-  difftr _ NilTup x = NilTup
+  difftr _ NilTup _ = NilTup
 --  gradtr _ NilTup x = NilAtup
 
 instance (DifferentiateValue a dx, DifferentiateTupleRepr t dx) => DifferentiateTupleRepr (t, a) dx where
   difftr tk (SnocTup t v) x = (difftr tk t x) `SnocTup` (diffT tk v x)
 --  gradtr tk (SnocAtup t v) x = (gradtr tk t x) `SnocTup` (diffT tk v x)
+
+
 
 
 
