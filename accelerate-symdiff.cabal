@@ -58,13 +58,13 @@ test-suite Exp
                , accelerate-symdiff
                , random
   test-module: Exp
-  other-modules: Symdiff, Smart, AST, Differentiable, Types
+  other-modules: Symdiff, AST, Differentiate, Types
 
 
 library
   -- Modules exported by the library.
   exposed-modules: Symdiff
-  other-modules: AST, Smart, Types
+  other-modules: AST, Differentiate, Types
   
   -- Modules included in this library but not exported.
   -- other-modules:       

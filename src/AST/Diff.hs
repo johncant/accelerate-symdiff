@@ -14,13 +14,15 @@ import Unsafe.Coerce
 import Types hiding (diff')
 import System.Random
 import System.IO.Unsafe
+import Differentiate hiding (diff')
+import qualified Differentiate (diff')
 
 
 -- Differentiate an AST
 
-diff' :: ( Elt tf, IsFloating tf
+diff' :: ( Elt tf, IsFloating tf, ToolsT tk
          )
-            => Tools
+            => tk
             -> PreExp Acc Exp tf
             -> Exp tf
             -> Exp tf
@@ -35,8 +37,13 @@ diff' tk (Const cf) _ = constant 0
 -- Assume tup0 is a 2-tuple with identical types
 -- TODO
 diff' tk f@(Prj (i::TupleIdx (TupleRepr tup0) tf) (te::Exp tup0)) x = Exp (Prj i dodgyTupleDiff) where
-  dodgyTupleDiff = unsafeCoerce (diffT tk teDodgy x) :: Exp tup0 where
+  dodgyTupleDiff = unsafeCoerce (diffTT tk teDodgy x) :: Exp tup0 where
   teDodgy = unsafeCoerce te :: Exp (tf, tf)
+
+diff' tk f@(Foreign a b c) (Exp x) = case x of
+  Foreign xa xb xc -> case matchMarkers a xa of
+    True -> constant 1
+    False -> diffT tk (b c) $ Exp x
 
 
 

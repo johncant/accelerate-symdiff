@@ -11,8 +11,6 @@ import qualified Data.Array.Accelerate.Smart as SMT (showPreExpOp, Exp(..), PreE
 import qualified Data.Array.Accelerate.AST as AST (PrimFun(..))
 import Data.Typeable
 import Symdiff (diff)
-import Smart hiding (diff)
-import AST
 
 tol :: (Fractional a) => a
 tol = 1e-2
@@ -33,8 +31,7 @@ testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
           symbolic' = (head.toList) symbolic :: a
           numerical' = (head.toList) numerical :: a
         case (symbolic' - numerical') < tol of
-          -- False -> do
-          _ -> do
+          False -> do
             return $ Finished $ Fail (name ++ " x at x =  " ++ show xcpu ++
                                                     ", expected " ++ show numerical' ++ ", got " ++ show symbolic'
                                                     )
@@ -51,6 +48,7 @@ testDifferentiateFun name fun (xs::[a]) = return $ map testAt xs where
 tests :: IO [Test]
 tests = do
   let whilefunc = (\x -> while (<* 77) (* 3) x)
+--      neuralnet = (\w1 w2 b x1 x2 -> let z = w1*x1 + w2*x2 + b in exp z / (1 + exp z))
       instances = [ testDifferentiateFun "neg" (\a -> negate a) ([1.0, -1.0] :: [Double])
                   , testDifferentiateFun "abs" (\a -> abs a) ([1.0, -1.0] :: [Double])
                   , testDifferentiateFun "sig" (\a -> signum a) ([1.0, -1.0] :: [Double])
@@ -90,6 +88,8 @@ tests = do
                   , testDifferentiateFun "min2" (\a -> min 5 a) ([-4, 0, 7] :: [Double])
 
                   , testDifferentiateFun "while" whilefunc ([0.5, 4] :: [Double])
+
+                  --, testDifferentiateFun "neuralnet" (\w -> ) ([0.5, 4] :: [Double])
 
                   ] :: [IO [TestInstance]]
   instances' <- sequence instances

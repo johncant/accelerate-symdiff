@@ -5,7 +5,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE GADTs #-}
 
-module AST.PrimFun (diffprimfun) where
+module AST.PrimFun (diffprimfun') where
 
 import Prelude hiding ((>*), (<*))
 import Data.Array.Accelerate.Type (IsFloating, NumType(..), numType)
@@ -18,14 +18,14 @@ import Foreign.C.Types (CFloat, CDouble)
 import Data.Array.Accelerate
 import Unsafe.Coerce
 import Types
-import Differentiate (Differentiate)
+import Differentiate (DifferentiateTuple, DifferentiateValue, ToolsT(..))
 import System.Random
 import System.IO.Unsafe
 
 
 
-diffprimfun' :: (Elt a, Elt b, IsFloating b)
-            => Tools -> PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
+diffprimfun' :: (Elt a, Elt b, IsFloating b, ToolsT t)
+            => t -> PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
 diffprimfun' tk pf@(PrimNeg _) a dx = diffAllPrimFunsFF tk pf a dx
 diffprimfun' tk pf@(PrimAbs _) a dx = diffAllPrimFunsFF tk pf a dx
 diffprimfun' tk pf@(PrimSig _) a dx = diffAllPrimFunsFF tk pf a dx
@@ -61,9 +61,9 @@ diffprimfun' tk _ _ dx = constant 0
 
 
 class DifferentiatePrimFunFF a b valid | a b -> valid where
-  diffAllPrimFunsFF :: Tools -> PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
+  diffAllPrimFunsFF :: (ToolsT tk) => tk -> PrimFun (a -> b) -> Exp a -> Exp b -> Exp b
 
-instance {-# OVERLAPPING #-} (Differentiate a a) => DifferentiatePrimFunFF a a HTrue where
+instance {-# OVERLAPPING #-} (DifferentiateValue a a) => DifferentiatePrimFunFF a a HTrue where
   diffAllPrimFunsFF = diffprimfunFF
 
 instance {-# OVERLAPPING #-} (r ~ HFalse) => DifferentiatePrimFunFF a b r where
@@ -72,9 +72,9 @@ instance {-# OVERLAPPING #-} (r ~ HFalse) => DifferentiatePrimFunFF a b r where
 
 
 class DifferentiatePrimFunTFF atup b valid | atup b -> valid where
-  diffAllPrimFunsTFF :: Tools -> PrimFun (atup -> b) -> Exp atup -> Exp b -> Exp b
+  diffAllPrimFunsTFF :: (ToolsT tk) => tk -> PrimFun (atup -> b) -> Exp atup -> Exp b -> Exp b
 
-instance {-# OVERLAPPING #-} (Differentiate a a) => DifferentiatePrimFunTFF (a, a) a HTrue where
+instance {-# OVERLAPPING #-} (DifferentiateValue a a) => DifferentiatePrimFunTFF (a, a) a HTrue where
   diffAllPrimFunsTFF = diffprimfunTFF
 
 instance {-# OVERLAPPING #-} (r ~ HFalse) => DifferentiatePrimFunTFF a b r where
@@ -82,8 +82,8 @@ instance {-# OVERLAPPING #-} (r ~ HFalse) => DifferentiatePrimFunTFF a b r where
 
 
 
-chainUnary :: (Differentiate t t)
-           => Tools
+chainUnary :: (DifferentiateValue t t, ToolsT tk)
+           => tk
            -> Exp t
            -> Exp t
            -> Exp t
@@ -91,8 +91,8 @@ chainUnary :: (Differentiate t t)
 
 chainUnary tk dexp a dx = dexp * (diffT tk a dx)
 
-chainBinary :: (Differentiate t t)
-            => Tools
+chainBinary :: (DifferentiateValue t t, ToolsT tk)
+            => tk
             -> Exp t -> Exp t
             -> Exp t -> Exp t
             -> Exp t
@@ -103,8 +103,8 @@ chainBinary tk dwrta1 dwrta2 a1 a2 dx = dwrta1 * (diffT tk a1 dx) + dwrta2 * (di
 
 -- In order of definition in Accelerate:
 -- Some credit goes to Wolfram Alpha
-diffprimfunFF :: (Differentiate a a)
-              => Tools
+diffprimfunFF :: (DifferentiateValue a a, ToolsT tk)
+              => tk
               -> (PrimFun (a -> a))
               -> Exp a
               -> Exp a
@@ -151,9 +151,9 @@ diffprimfunFF tk (PrimLog ty) a dx = chainUnary tk (recip a) a dx
 
 
 -- -- Binary funcs
-diffprimfunTFF :: (IsFloating a, Elt a
+diffprimfunTFF :: (IsFloating a, Elt a, ToolsT tk
                   )
-               => Tools
+               => tk
                -> PrimFun ((a,a) -> a)
                -> Exp (a, a)
                -> Exp a
@@ -194,8 +194,9 @@ diffprimfunTFF tk (PrimMin ty) ta1a2 dx = (a2 <* a1) ? (chainUnary tk 1 a2 dx, c
  -- All functions that input non-floats and output floats must have a differential of 0 or be undifferentiable
 
 diffprimFunOF :: (IsFloating tb, Elt tb, Eq tb,
-                  IsIntegral ta, Elt ta, Eq ta
+                  IsIntegral ta, Elt ta, Eq ta,
+                  ToolsT tk
                   )
-              => Tools -> PrimFun (ta -> tb) -> Exp tb -> Exp tb -> Exp tb
+              => tk -> PrimFun (ta -> tb) -> Exp tb -> Exp tb -> Exp tb
 diffprimFunOF _ _ _ _ = constant 63
 

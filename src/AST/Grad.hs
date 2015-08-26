@@ -14,12 +14,13 @@ import Unsafe.Coerce
 import Types
 import System.Random
 import System.IO.Unsafe
+import Differentiate
 
 
 
-grad' :: ( Elt tf, IsFloating tf
+grad' :: ( Elt tf, IsFloating tf, ToolsT tk
          )
-      => Tools
+      => tk
       -> PreExp Acc Exp tf
       -> Acc (Vector tf)
       -> Exp tf
